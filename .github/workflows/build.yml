@@ -25,4 +25,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MedicionGusanos-Windows
-          path: dist/MedicionGusanos.exe
+          path: dist/MedicionGusanos/
