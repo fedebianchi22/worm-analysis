@@ -143,6 +143,6 @@ if st.session_state.resultados is not None:
             img = cv2.imread(ruta_anotada)
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             with cols[i % 3]:
-                st.image(img_rgb, caption=archivo, use_container_width=True)
+                st.image(img_rgb, caption=archivo, use_column_width=True)
 else:
     st.info("Elegí una carpeta con fotos y apretá \"Procesar todas las fotos\" para empezar.")
