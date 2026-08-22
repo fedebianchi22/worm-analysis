@@ -17,9 +17,18 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
     # Suavizar un poco para reducir ruido de la cámara
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
+    # Corregir el degradado de iluminación (viñeteado hacia los bordes de la foto):
+    # estimamos el fondo con un cierre morfológico de kernel grande (más ancho que
+    # cualquier gusano, así los "cierra" y deja solo el nivel de fondo local) y
+    # aplanamos dividiendo por esa estimación. Sin esto, un gusano tenue en una zona
+    # oscurecida por el viñeteado queda fusionado con el fondo y no se detecta.
+    kernel_fondo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))
+    fondo = cv2.morphologyEx(blur, cv2.MORPH_CLOSE, kernel_fondo)
+    corregida = cv2.divide(blur, fondo, scale=255)
+
     # El gusano es más oscuro que el fondo -> threshold adaptativo
     # Usamos Otsu sobre el negativo para separar objetos oscuros
-    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, thresh = cv2.threshold(corregida, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     # Limpieza morfológica: sacar ruido chico y cerrar huecos en el trazo del gusano
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -50,6 +59,13 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
         # Máscara individual de este contorno para el esqueleto
         mask = np.zeros(gray.shape, dtype=np.uint8)
         cv2.drawContours(mask, [cnt], -1, 255, -1)
+
+        # Suavizar bordes chicos del contorno: sin esto, una pequeña irregularidad
+        # en el borde puede esqueletizarse como una bifurcación falsa y marcar un
+        # gusano normal como "posible cruce" sin que haya ningún cruce real.
+        kernel_suave = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_suave, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_suave, iterations=1)
 
         skeleton = skeletonize(mask > 0)
         ys, xs = np.nonzero(skeleton)
@@ -91,8 +107,8 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
 
         results.append({
             "id": i,
-            "area_um2": None if posible_cruce else round(area_um2, 1),
-            "length_um": None if posible_cruce else round(length_um, 1),
+            "area_um2": round(area_um2, 1),
+            "length_um": round(length_um, 1),
             "revisar_manualmente": revisar,
             "motivo": "; ".join(motivo) if motivo else "",
         })
