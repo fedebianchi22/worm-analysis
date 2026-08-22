@@ -27,6 +27,7 @@ if __name__ == "__main__":
     print("  MEDICIÓN DE GUSANOS")
     print("=" * 60)
     print()
+    print("  Iniciando el programa, puede tardar unos segundos...")
     print("  El programa ya se abrió en tu navegador.")
     print("  Si no se abrió solo, entrá a: http://localhost:8501")
     print()
@@ -34,6 +35,15 @@ if __name__ == "__main__":
     print("  >>> Para salir del programa, cerrá esta ventana negra <<<")
     print()
     print("=" * 60)
+
+    # Evita que Streamlit se quede esperando el mail de bienvenida
+    # (bloquea la terminal en el primer uso si no se hace esto)
+    streamlit_config_dir = os.path.join(os.path.expanduser("~"), ".streamlit")
+    os.makedirs(streamlit_config_dir, exist_ok=True)
+    credentials_path = os.path.join(streamlit_config_dir, "credentials.toml")
+    if not os.path.exists(credentials_path):
+        with open(credentials_path, "w") as f:
+            f.write('[general]\nemail = ""\n')
 
     threading.Thread(target=abrir_navegador, daemon=True).start()
 

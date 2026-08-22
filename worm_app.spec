@@ -1,16 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
-import streamlit
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all
 
-streamlit_data = collect_data_files("streamlit")
-streamlit_hidden = collect_submodules("streamlit")
+datas = [("app.py", "."), ("measure_worms.py", ".")]
+binaries = []
+hiddenimports = []
+
+for pkg in ["streamlit", "altair", "pyarrow", "pandas", "skimage", "networkx", "cv2"]:
+    d, b, h = collect_all(pkg)
+    datas += d
+    binaries += b
+    hiddenimports += h
 
 a = Analysis(
     ["launcher.py"],
     pathex=[],
-    binaries=[],
-    datas=streamlit_data + [("app.py", "."), ("measure_worms.py", ".")],
-    hiddenimports=streamlit_hidden + ["skimage.morphology", "networkx"],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,16 +28,22 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="MedicionGusanos",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    name="MedicionGusanos",
 )
