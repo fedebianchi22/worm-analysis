@@ -1,115 +1,82 @@
 """
 App de medición de gusanos - laboratorio de biotecnología
-Selecciona una carpeta de fotos, mide automáticamente cada gusano
-(área y longitud en µm) y exporta los resultados a Excel.
+Subí fotos de gusanos, los mide automáticamente (área y longitud en µm)
+y exporta los resultados a Excel.
 """
 import streamlit as st
 import pandas as pd
 import cv2
 import os
-import glob
 import tempfile
-import threading
-from datetime import datetime
 
 from measure_worms import measure_worms
 
 st.set_page_config(page_title="Medición de gusanos", page_icon="🔬", layout="wide")
 
-EXTENSIONES_VALIDAS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+EXTENSIONES_VALIDAS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff"]
 
-if "carpeta" not in st.session_state:
-    st.session_state.carpeta = ""
 if "resultados" not in st.session_state:
     st.session_state.resultados = None
 if "carpeta_salida" not in st.session_state:
     st.session_state.carpeta_salida = None
 
-
-def elegir_carpeta():
-    """Abre el explorador de carpetas nativo de Windows y guarda la ruta elegida."""
-    import tkinter as tk
-    from tkinter import filedialog
-
-    resultado = {"ruta": ""}
-
-    def _abrir():
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", 1)
-        resultado["ruta"] = filedialog.askdirectory(title="Elegí la carpeta con las fotos de gusanos")
-        root.destroy()
-
-    hilo = threading.Thread(target=_abrir)
-    hilo.start()
-    hilo.join()
-    if resultado["ruta"]:
-        st.session_state.carpeta = resultado["ruta"]
-
-
 st.title("🔬 Medición automática de gusanos")
 st.caption("Detecta cada gusano en las fotos, mide área y longitud en µm, y exporta todo a Excel.")
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.text_input("Carpeta seleccionada", value=st.session_state.carpeta, disabled=True, label_visibility="collapsed", placeholder="Ninguna carpeta seleccionada todavía")
-with col2:
-    st.button("📁 Elegir carpeta", on_click=elegir_carpeta, use_container_width=True)
+archivos_subidos = st.file_uploader(
+    "Subí las fotos de los gusanos",
+    type=EXTENSIONES_VALIDAS,
+    accept_multiple_files=True,
+)
 
-procesar = st.button("▶️ Procesar todas las fotos", type="primary", disabled=not st.session_state.carpeta)
+procesar = st.button("▶️ Procesar todas las fotos", type="primary", disabled=not archivos_subidos)
 
 if procesar:
-    carpeta = st.session_state.carpeta
-    archivos = []
-    for ext in EXTENSIONES_VALIDAS:
-        archivos.extend(glob.glob(os.path.join(carpeta, f"*{ext}")))
-        archivos.extend(glob.glob(os.path.join(carpeta, f"*{ext.upper()}")))
-    archivos = sorted(set(archivos))
+    carpeta_entrada = tempfile.mkdtemp(prefix="gusanos_entrada_")
+    carpeta_salida = tempfile.mkdtemp(prefix="gusanos_resultados_")
 
-    if not archivos:
-        st.warning("No encontré fotos (png/jpg/jpeg/bmp/tif) en esa carpeta.")
-    else:
-        carpeta_salida = os.path.join(carpeta, f"resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(carpeta_salida, exist_ok=True)
+    filas = []
+    progreso = st.progress(0, text="Procesando fotos...")
+    errores = []
 
-        filas = []
-        progreso = st.progress(0, text="Procesando fotos...")
-        errores = []
+    for idx, archivo_subido in enumerate(archivos_subidos):
+        nombre = archivo_subido.name
+        ruta_entrada = os.path.join(carpeta_entrada, nombre)
+        with open(ruta_entrada, "wb") as f:
+            f.write(archivo_subido.getbuffer())
 
-        for idx, archivo in enumerate(archivos):
-            nombre = os.path.basename(archivo)
-            salida_img = os.path.join(carpeta_salida, f"anotada_{nombre}")
-            try:
-                res = measure_worms(archivo, salida_img)
-                if not res:
-                    filas.append({"archivo": nombre, "id": None, "area_um2": None,
-                                   "length_um": None, "revisar_manualmente": True,
-                                   "motivo": "no se detectó ningún gusano"})
-                for r in res:
-                    filas.append({"archivo": nombre, **r})
-            except Exception as e:
-                errores.append(f"{nombre}: {e}")
-            progreso.progress((idx + 1) / len(archivos), text=f"Procesando {nombre} ({idx+1}/{len(archivos)})")
+        salida_img = os.path.join(carpeta_salida, f"anotada_{nombre}")
+        try:
+            res = measure_worms(ruta_entrada, salida_img)
+            if not res:
+                filas.append({"archivo": nombre, "id": None, "area_um2": None,
+                               "length_um": None, "revisar_manualmente": True,
+                               "motivo": "no se detectó ningún gusano"})
+            for r in res:
+                filas.append({"archivo": nombre, **r})
+        except Exception as e:
+            errores.append(f"{nombre}: {e}")
+        progreso.progress((idx + 1) / len(archivos_subidos), text=f"Procesando {nombre} ({idx+1}/{len(archivos_subidos)})")
 
-        progreso.empty()
+    progreso.empty()
 
-        df = pd.DataFrame(filas)
-        excel_path = os.path.join(carpeta_salida, "mediciones_gusanos.xlsx")
-        with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Mediciones")
-            ws = writer.sheets["Mediciones"]
-            for col in ws.columns:
-                max_len = max(len(str(c.value)) for c in col) + 2
-                ws.column_dimensions[col[0].column_letter].width = max_len
+    df = pd.DataFrame(filas)
+    excel_path = os.path.join(carpeta_salida, "mediciones_gusanos.xlsx")
+    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Mediciones")
+        ws = writer.sheets["Mediciones"]
+        for col in ws.columns:
+            max_len = max(len(str(c.value)) for c in col) + 2
+            ws.column_dimensions[col[0].column_letter].width = max_len
 
-        st.session_state.resultados = df
-        st.session_state.carpeta_salida = carpeta_salida
-        st.session_state.archivos_procesados = len(archivos)
-        st.session_state.errores = errores
+    st.session_state.resultados = df
+    st.session_state.carpeta_salida = carpeta_salida
+    st.session_state.archivos_procesados = len(archivos_subidos)
+    st.session_state.errores = errores
 
 if st.session_state.resultados is not None:
     df = st.session_state.resultados
-    st.success(f"Listo — {st.session_state.archivos_procesados} fotos procesadas. Resultados guardados en:\n\n`{st.session_state.carpeta_salida}`")
+    st.success(f"Listo — {st.session_state.archivos_procesados} fotos procesadas.")
 
     if st.session_state.get("errores"):
         with st.expander(f"⚠️ {len(st.session_state.errores)} fotos con error al procesar"):
@@ -145,4 +112,4 @@ if st.session_state.resultados is not None:
             with cols[i % 3]:
                 st.image(img_rgb, caption=archivo, use_column_width=True)
 else:
-    st.info("Elegí una carpeta con fotos y apretá \"Procesar todas las fotos\" para empezar.")
+    st.info("Subí las fotos de los gusanos y apretá \"Procesar todas las fotos\" para empezar.")
