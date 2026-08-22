@@ -5,7 +5,7 @@ datas = [("app.py", "."), ("measure_worms.py", ".")]
 binaries = []
 hiddenimports = []
 
-for pkg in ["streamlit", "altair", "pyarrow", "pandas", "skimage", "networkx", "cv2"]:
+for pkg in ["streamlit", "altair", "pyarrow", "pandas", "numpy", "skimage", "networkx", "cv2"]:
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -16,7 +16,12 @@ a = Analysis(
     pathex=[],
     binaries=binaries,
     datas=datas,
-    hiddenimports=hiddenimports,
+    hiddenimports=hiddenimports + [
+        "numpy.core._exceptions",
+        "numpy._core._exceptions",
+        "numpy.core.multiarray",
+        "numpy._core.multiarray",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
