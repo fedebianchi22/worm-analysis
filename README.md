@@ -11,6 +11,20 @@ calibración de Motic. Está en `measure_worms.py`, línea `PX_PER_MM`.
 Si en algún momento cambian de cámara/resolución/objetivo, hay que
 recalibrar y actualizar ese valor (avisame y te paso el script actualizado).
 
+## Especie y rangos esperados (referencia)
+
+Los gusanos son *Caenorhabditis elegans*. Como referencia para detectar
+mediciones sospechosas (útil si en algún momento el área o la longitud
+dan valores raros):
+
+- Adulto: ~1000-1100 µm de largo, ~65-80 µm de ancho (parte más gruesa)
+- Larva L1: ~250 µm de largo, ~15 µm de ancho
+- Larvas L2-L4: tamaños intermedios entre esos dos
+
+Si una medición se va muy lejos de estos rangos, probablemente sea un
+error de segmentación (ruido detectado como gusano, calibración
+desactualizada, etc.) más que un gusano real de ese tamaño.
+
 ## Uso (una vez que tengas el .exe)
 
 1. Doble click en `MedicionGusanos.exe`.
@@ -56,4 +70,3 @@ streamlit run app.py
 - `launcher.py` — punto de entrada del .exe (abre el navegador solo).
 - `worm_app.spec` — configuración de PyInstaller.
 - `.github/workflows/build.yml` — compila el .exe automáticamente en GitHub.
-# worm-analysis
