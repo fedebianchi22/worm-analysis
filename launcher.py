@@ -1,0 +1,46 @@
+"""
+Punto de entrada del ejecutable: levanta la app de Streamlit
+en localhost y abre el navegador automáticamente.
+"""
+import os
+import sys
+import threading
+import webbrowser
+import time
+from streamlit.web import cli as stcli
+
+
+def abrir_navegador():
+    time.sleep(2.5)
+    webbrowser.open("http://localhost:8501")
+
+
+if __name__ == "__main__":
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    app_path = os.path.join(base_path, "app.py")
+
+    print("=" * 60)
+    print("  MEDICIÓN DE GUSANOS")
+    print("=" * 60)
+    print()
+    print("  El programa ya se abrió en tu navegador.")
+    print("  Si no se abrió solo, entrá a: http://localhost:8501")
+    print()
+    print("  >>> NO CIERRES ESTA VENTANA mientras estés usando el programa <<<")
+    print("  >>> Para salir del programa, cerrá esta ventana negra <<<")
+    print()
+    print("=" * 60)
+
+    threading.Thread(target=abrir_navegador, daemon=True).start()
+
+    sys.argv = [
+        "streamlit", "run", app_path,
+        "--server.headless=true",
+        "--server.port=8501",
+        "--browser.gatherUsageStats=false",
+    ]
+    sys.exit(stcli.main())

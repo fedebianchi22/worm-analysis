@@ -1,0 +1,7 @@
+streamlit==1.38.0
+opencv-python-headless==4.10.0.84
+scikit-image==0.24.0
+networkx==3.3
+pandas==2.2.2
+openpyxl==3.1.5
+pyinstaller==6.10.0
