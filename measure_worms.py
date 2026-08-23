@@ -10,6 +10,115 @@ import networkx as nx
 PX_PER_MM = 393.0  # calibración 4X (del asistente de calibración de Motic: 2.544529 µm/px)
 PX_PER_UM = PX_PER_MM / 1000  # píxeles por micrómetro
 
+KERNEL_SUAVE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+
+
+def _suavizar_mascara(mask):
+    # Suavizar bordes chicos del contorno: sin esto, una pequeña irregularidad
+    # en el borde puede esqueletizarse como una bifurcación falsa y marcar un
+    # gusano normal como "posible cruce" sin que haya ningún cruce real.
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_SUAVE, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, KERNEL_SUAVE, iterations=1)
+    return mask
+
+
+def _esqueletizar(mask):
+    """Devuelve (length_px, skel_points, junctions) a partir de una máscara binaria."""
+    skeleton = skeletonize(mask > 0)
+    ys, xs = np.nonzero(skeleton)
+    skel_points = list(zip(xs.tolist(), ys.tolist()))
+    skel_set = set(skel_points)
+
+    Gs = nx.Graph()
+    for (px_, py_) in skel_points:
+        Gs.add_node((px_, py_))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nb = (px_ + dx, py_ + dy)
+                if nb in skel_set:
+                    Gs.add_edge((px_, py_), nb, weight=np.hypot(dx, dy))
+
+    degrees = dict(Gs.degree())
+    junctions = [n for n, d in degrees.items() if d >= 3]
+    length_px = sum(data["weight"] for _, _, data in Gs.edges(data=True))
+    return length_px, skel_points, junctions
+
+
+def _simplificar_contorno(cnt, n_objetivo=14, intentos=12):
+    """Reduce un contorno (cientos de puntos) a ~n_objetivo puntos manipulables a mano."""
+    perimetro = cv2.arcLength(cnt, True)
+    if perimetro == 0:
+        return cnt.reshape(-1, 2).tolist()
+
+    epsilon = perimetro * 0.01
+    aprox = cv2.approxPolyDP(cnt, epsilon, True)
+    for _ in range(intentos):
+        if len(aprox) <= n_objetivo + 4 and len(aprox) >= max(4, n_objetivo - 6):
+            break
+        if len(aprox) > n_objetivo:
+            epsilon *= 1.3
+        else:
+            epsilon *= 0.7
+        aprox = cv2.approxPolyDP(cnt, epsilon, True)
+    return aprox.reshape(-1, 2).tolist()
+
+
+def medir_desde_contorno(contorno_puntos, img_shape):
+    """
+    Recalcula área y longitud a partir de un contorno editado a mano (lista de
+    [x, y]). Se usa desde el corrector de imagen cuando el usuario ajusta los
+    puntos del contorno detectado automáticamente.
+    """
+    mask = np.zeros(img_shape[:2], dtype=np.uint8)
+    pts = np.array([contorno_puntos], dtype=np.int32)
+    cv2.fillPoly(mask, pts, 255)
+    mask = _suavizar_mascara(mask)
+
+    area_px = int((mask > 0).sum())
+    length_px, skel_points, junctions = _esqueletizar(mask)
+
+    area_um2 = area_px / (PX_PER_UM ** 2)
+    length_um = length_px / PX_PER_UM
+    return {
+        "area_um2": round(area_um2, 1),
+        "length_um": round(length_um, 1),
+        "skel_points": skel_points,
+        "junctions": junctions,
+        "posible_cruce": len(junctions) > 0,
+    }
+
+
+def dibujar_overlay(image_path, out_path, gusanos):
+    """
+    Regenera la imagen anotada completa a partir de la foto original y el
+    estado actual (posiblemente corregido a mano) de cada gusano.
+    gusanos: lista de dicts con "id", "contorno" (lista de [x,y]),
+        "length_um", "revisar_manualmente", "motivo", "skel_points" (opcional).
+    """
+    img = cv2.imread(image_path)
+    overlay = img.copy()
+
+    for g in gusanos:
+        pts = np.array([g["contorno"]], dtype=np.int32)
+        x, y, w, h = cv2.boundingRect(pts)
+        revisar = g["revisar_manualmente"]
+        color = (0, 0, 255) if revisar else (0, 255, 0)
+        cv2.drawContours(overlay, [pts], -1, color, 2)
+
+        for (px_, py_) in g.get("skel_points", []):
+            if 0 <= py_ < overlay.shape[0] and 0 <= px_ < overlay.shape[1]:
+                overlay[py_, px_] = (255, 0, 255) if g.get("posible_cruce") else (0, 0, 255)
+
+        motivo = g.get("motivo") or ""
+        label = f"REVISAR: {motivo}" if revisar and motivo else ("REVISAR" if revisar else f"L={g['length_um']:.0f}um")
+        cv2.putText(overlay, f"#{g['id']} {label}", (x, max(0, y - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 0), 2)
+
+    cv2.imwrite(out_path, overlay)
+
+
 def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_solidity=0.65):
     img = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -49,7 +158,6 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
         # Filtrar por forma: un gusano (aunque esté doblado) tiene "solidez" baja
         # (área real / área del casco convexo), a diferencia de sombras o manchas compactas.
         x, y, w, h = cv2.boundingRect(cnt)
-        aspect = max(w, h) / max(1, min(w, h))
         hull = cv2.convexHull(cnt)
         hull_area = cv2.contourArea(hull)
         solidity = area_px / hull_area if hull_area > 0 else 1.0
@@ -59,37 +167,10 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
         # Máscara individual de este contorno para el esqueleto
         mask = np.zeros(gray.shape, dtype=np.uint8)
         cv2.drawContours(mask, [cnt], -1, 255, -1)
+        mask = _suavizar_mascara(mask)
 
-        # Suavizar bordes chicos del contorno: sin esto, una pequeña irregularidad
-        # en el borde puede esqueletizarse como una bifurcación falsa y marcar un
-        # gusano normal como "posible cruce" sin que haya ningún cruce real.
-        kernel_suave = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_suave, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_suave, iterations=1)
-
-        skeleton = skeletonize(mask > 0)
-        ys, xs = np.nonzero(skeleton)
-        skel_points = list(zip(xs, ys))
-        skel_set = set(skel_points)
-
-        # Grafo del esqueleto para detectar bifurcaciones (gusanos pegados/cruzados)
-        Gs = nx.Graph()
-        for (px_, py_) in skel_points:
-            Gs.add_node((px_, py_))
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    nb = (px_ + dx, py_ + dy)
-                    if nb in skel_set:
-                        Gs.add_edge((px_, py_), nb, weight=np.hypot(dx, dy))
-
-        degrees = dict(Gs.degree())
-        junctions = [n for n, d in degrees.items() if d >= 3]
+        length_px, skel_points, junctions = _esqueletizar(mask)
         posible_cruce = len(junctions) > 0
-
-        # Longitud del esqueleto: sumar distancias entre píxeles conectados por vecindad
-        length_px = sum(data["weight"] for _, _, data in Gs.edges(data=True))
 
         area_um2 = area_px / (PX_PER_UM ** 2)
         length_um = length_px / PX_PER_UM
@@ -111,6 +192,9 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
             "length_um": round(length_um, 1),
             "revisar_manualmente": revisar,
             "motivo": "; ".join(motivo) if motivo else "",
+            "contorno": _simplificar_contorno(cnt),
+            "skel_points": skel_points,
+            "posible_cruce": posible_cruce,
         })
 
         # Dibujar overlay: contorno en verde (ok) o rojo (revisar a mano)
