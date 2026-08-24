@@ -350,13 +350,16 @@ if resultado is not None:
             st.session_state[version_key] = 0
 
         # "contorno_control" son los puntos que el usuario edita a mano (pocos,
-        # manejables, con manijas de curvatura por punto); "contorno" es el
-        # trazado ya aplanado en muchos puntos finos, usado para dibujar y medir.
-        contorno_control_guardado = fila_corr.get("contorno_control")
-        if contorno_control_guardado:
+        # manejables, con manijas de curvatura por punto); "contorno" es el de
+        # alta resolución, usado para dibujar y medir. Recién detectado,
+        # contorno_control viene simplificado como pares [x,y] planos (de
+        # measure_worms); si ya se corrigió antes, viene con curved/hx/hy.
+        contorno_control_guardado = fila_corr.get("contorno_control") or []
+        if contorno_control_guardado and isinstance(contorno_control_guardado[0], dict):
             contorno_inicial = contorno_control_guardado
         else:
-            contorno_inicial = [{"x": px, "y": py, "curved": False, "hx": 0, "hy": 0} for px, py in fila_corr["contorno"]]
+            base = contorno_control_guardado or fila_corr["contorno"]
+            contorno_inicial = [{"x": px, "y": py, "curved": False, "hx": 0, "hy": 0} for px, py in base]
 
         xs = [p["x"] for p in contorno_inicial]
         ys = [p["y"] for p in contorno_inicial]

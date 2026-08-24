@@ -222,7 +222,16 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
             "length_um": round(length_um, 1),
             "revisar_manualmente": revisar,
             "motivo": "; ".join(motivo) if motivo else "",
-            "contorno": _simplificar_contorno(cnt),
+            # "contorno" es el de alta resolución (el mismo que se dibuja acá
+            # abajo): dibujar_overlay() lo reutiliza para redibujar TODOS los
+            # gusanos de la foto cada vez que se corrige uno solo, así que si
+            # fuera el simplificado, los gusanos no tocados quedarían con un
+            # contorno anguloso en vez de la curva suave original.
+            "contorno": cnt.reshape(-1, 2).tolist(),
+            # "contorno_control" es el simplificado (pocos puntos), para el
+            # editor a mano; se reemplaza por el ajustado por el usuario recién
+            # cuando aplica una corrección.
+            "contorno_control": _simplificar_contorno(cnt),
             "skel_points": skel_points,
             "posible_cruce": posible_cruce,
         })
