@@ -311,11 +311,16 @@ if resultado is not None:
             st.session_state[version_key] = 0
 
         # "contorno_control" son los puntos que el usuario edita a mano (pocos,
-        # manejables); "contorno" es lo que se usa para dibujar y medir (si hay
-        # curva suave, es la curva ya muestreada en muchos puntos finos).
-        contorno_inicial = fila_corr.get("contorno_control", fila_corr["contorno"])
-        xs = [p[0] for p in contorno_inicial]
-        ys = [p[1] for p in contorno_inicial]
+        # manejables, con manijas de curvatura por punto); "contorno" es el
+        # trazado ya aplanado en muchos puntos finos, usado para dibujar y medir.
+        contorno_control_guardado = fila_corr.get("contorno_control")
+        if contorno_control_guardado:
+            contorno_inicial = contorno_control_guardado
+        else:
+            contorno_inicial = [{"x": px, "y": py, "curved": False, "hx": 0, "hy": 0} for px, py in fila_corr["contorno"]]
+
+        xs = [p["x"] for p in contorno_inicial]
+        ys = [p["y"] for p in contorno_inicial]
         margen = 40
         x0 = int(max(0, min(xs) - margen))
         y0 = int(max(0, min(ys) - margen))
@@ -330,18 +335,22 @@ if resultado is not None:
         canvas_w, canvas_h = int(crop_w * escala), int(crop_h * escala)
 
         crop_img = Image.fromarray(crop).resize((canvas_w, canvas_h))
-        puntos_canvas = [[(px - x0) * escala, (py - y0) * escala] for px, py in contorno_inicial]
+        puntos_canvas = [
+            {
+                "x": (p["x"] - x0) * escala, "y": (p["y"] - y0) * escala,
+                "curved": p["curved"], "hx": p["hx"] * escala, "hy": p["hy"] * escala,
+            }
+            for p in contorno_inicial
+        ]
 
         st.caption(
             "Click en la línea amarilla para agregar un punto ahí. Arrastrá un punto verde para moverlo "
             "(la línea se actualiza en vivo). Click en un punto sin arrastrar abre un menú para eliminarlo "
-            "o activar curva suave."
+            "o convertirlo en punto curvo (con sus propias manijas, como en Illustrator) — así podés dejar "
+            "tramos rectos y curvar solo donde haga falta."
         )
         pen_key = f"pen_{sid_corr}_{archivo_corr}_{idx_corr}_v{st.session_state[version_key]}"
-        resultado_pen = pen_editor(
-            _imagen_a_data_uri(crop_img), canvas_w, canvas_h, puntos_canvas,
-            smooth=fila_corr.get("curva_suave", False), key=pen_key,
-        )
+        resultado_pen = pen_editor(_imagen_a_data_uri(crop_img), canvas_w, canvas_h, puntos_canvas, key=pen_key)
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -358,14 +367,18 @@ if resultado is not None:
             if len(puntos_editados) < 3:
                 st.error("Hacen falta al menos 3 puntos.")
             else:
-                nuevo_control = [[x0 + px / escala, y0 + py / escala] for px, py in puntos_editados]
-                curva_suave = bool(resultado_pen.get("smooth"))
-                medicion = medir_desde_contorno(nuevo_control, img_original.shape, curva_suave=curva_suave)
+                nuevo_control = [
+                    {
+                        "x": x0 + p["x"] / escala, "y": y0 + p["y"] / escala,
+                        "curved": p["curved"], "hx": p["hx"] / escala, "hy": p["hy"] / escala,
+                    }
+                    for p in puntos_editados
+                ]
+                medicion = medir_desde_contorno(nuevo_control, img_original.shape)
                 fila_corr["area_um2"] = medicion["area_um2"]
                 fila_corr["length_um"] = medicion["length_um"]
                 fila_corr["contorno"] = medicion["contorno_dibujo"]
-                fila_corr["contorno_control"] = [[int(round(x)), int(round(y))] for x, y in nuevo_control]
-                fila_corr["curva_suave"] = curva_suave
+                fila_corr["contorno_control"] = nuevo_control
                 fila_corr["skel_points"] = medicion["skel_points"]
                 fila_corr["posible_cruce"] = medicion["posible_cruce"]
                 fila_corr["revisar_manualmente"] = False

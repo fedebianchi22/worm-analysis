@@ -8,8 +8,10 @@
   svg { display: block; touch-action: none; }
   .pt { cursor: grab; }
   .pt:active { cursor: grabbing; }
-  #outline { fill: rgba(255,255,0,0.08); stroke: #ffe100; stroke-width: 2; }
-  #hint { fill: none; stroke: #00c853; stroke-width: 3; stroke-linecap: round; opacity: 0; pointer-events: none; }
+  .handle { cursor: grab; }
+  .handle:active { cursor: grabbing; }
+  .handle-line { stroke: #66aaff; stroke-width: 1.5; pointer-events: none; }
+  #outline { fill: rgba(255,225,0,0.08); stroke: #ffe100; stroke-width: 2; }
   #menu {
     position: absolute; display: none; flex-direction: column; gap: 2px;
     background: #222; border-radius: 6px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
@@ -21,20 +23,22 @@
     padding: 5px 10px; border-radius: 4px; cursor: pointer;
   }
   #menu button:hover { background: #3a3a3a; }
-  #menu .active { color: #66e07a; }
+  #menu button.active { color: #66e07a; }
+  #menu button:disabled { opacity: 0.4; cursor: default; }
+  #menu button:disabled:hover { background: transparent; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <svg id="svg">
     <image id="bg" href="" x="0" y="0" />
-    <path id="hint" d=""></path>
-    <polygon id="outline" points=""></polygon>
+    <path id="outline" d=""></path>
+    <g id="handles"></g>
     <g id="points"></g>
   </svg>
   <div id="menu">
     <button id="btn-del">🗑 Eliminar punto</button>
-    <button id="btn-smooth">〰️ Curva suave</button>
+    <button id="btn-curve">〰️ Punto curvo</button>
   </div>
 </div>
 <script>
@@ -42,19 +46,21 @@
   const svg = document.getElementById("svg");
   const bg = document.getElementById("bg");
   const outline = document.getElementById("outline");
-  const hint = document.getElementById("hint");
   const pointsGroup = document.getElementById("points");
+  const handlesGroup = document.getElementById("handles");
   const menu = document.getElementById("menu");
   const btnDel = document.getElementById("btn-del");
-  const btnSmooth = document.getElementById("btn-smooth");
+  const btnCurve = document.getElementById("btn-curve");
 
   const RADIUS = 7;
+  const HANDLE_RADIUS = 5;
   const ADD_THRESHOLD = 16;
+  const CURVE_SAMPLES = 16;
 
-  let points = [];
-  let smooth = false;
+  let points = []; // [{x,y,curved,hx,hy}, ...]
   let width = 400, height = 400;
-  let dragIdx = null;
+  let dragIdx = null;       // arrastrando un punto
+  let dragHandle = null;    // {idx, side: 'in'|'out'}
   let dragMoved = false;
   let menuIdx = null;
   let ready = false;
@@ -66,7 +72,7 @@
     post({ type: "streamlit:setFrameHeight", height: height + 4 });
   }
   function sendValue() {
-    post({ type: "streamlit:setComponentValue", value: { points: points, smooth: smooth }, dataType: "json" });
+    post({ type: "streamlit:setComponentValue", value: { points: points }, dataType: "json" });
   }
 
   function toLocal(e) {
@@ -74,50 +80,93 @@
     return [e.clientX - rect.left, e.clientY - rect.top];
   }
 
-  // Catmull-Rom -> cubic bezier control points for a closed smooth path (preview only)
-  function smoothPathD(pts) {
-    const n = pts.length;
-    if (n < 3) return "";
-    let d = "M " + pts[0][0] + " " + pts[0][1] + " ";
+  function bezierPoint(p1, p2, t) {
+    const c1x = p1.x + p1.hx, c1y = p1.y + p1.hy;
+    const c2x = p2.x - p2.hx, c2y = p2.y - p2.hy;
+    const mt = 1 - t;
+    const x = mt * mt * mt * p1.x + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * p2.x;
+    const y = mt * mt * mt * p1.y + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * p2.y;
+    return [x, y];
+  }
+
+  function pathD() {
+    const n = points.length;
+    if (n < 2) return "";
+    let d = "M " + points[0].x + " " + points[0].y + " ";
     for (let i = 0; i < n; i++) {
-      const p0 = pts[(i - 1 + n) % n];
-      const p1 = pts[i];
-      const p2 = pts[(i + 1) % n];
-      const p3 = pts[(i + 2) % n];
-      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-      d += "C " + c1x + " " + c1y + ", " + c2x + " " + c2y + ", " + p2[0] + " " + p2[1] + " ";
+      const p1 = points[i], p2 = points[(i + 1) % n];
+      const c1x = p1.x + p1.hx, c1y = p1.y + p1.hy;
+      const c2x = p2.x - p2.hx, c2y = p2.y - p2.hy;
+      d += "C " + c1x + " " + c1y + ", " + c2x + " " + c2y + ", " + p2.x + " " + p2.y + " ";
     }
     d += "Z";
     return d;
   }
 
-  function redraw() {
-    if (smooth) {
-      outline.setAttribute("points", "");
-      outline.style.display = "none";
-      hint.setAttribute("d", smoothPathD(points));
-      hint.style.opacity = "1";
-      hint.style.stroke = "#ffe100";
-      hint.style.strokeWidth = "2";
-      hint.style.fill = "rgba(255,255,0,0.08)";
-    } else {
-      outline.style.display = "";
-      outline.setAttribute("points", points.map((p) => p[0] + "," + p[1]).join(" "));
-      hint.style.opacity = "0";
-      hint.style.fill = "none";
+  function closestOnSegment(px, py, p1, p2) {
+    let best = null;
+    for (let s = 0; s <= CURVE_SAMPLES; s++) {
+      const t = s / CURVE_SAMPLES;
+      const [x, y] = bezierPoint(p1, p2, t);
+      const dx = px - x, dy = py - y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (best === null || dist < best.dist) best = { dist, x, y };
     }
+    return best;
+  }
+
+  function defaultHandleLen(idx) {
+    const n = points.length;
+    const prev = points[(idx - 1 + n) % n];
+    const next = points[(idx + 1) % n];
+    const p = points[idx];
+    const dPrev = Math.hypot(p.x - prev.x, p.y - prev.y);
+    const dNext = Math.hypot(next.x - p.x, next.y - p.y);
+    let dx = next.x - prev.x, dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const scale = Math.min(dPrev, dNext) * 0.35;
+    return [(dx / len) * scale, (dy / len) * scale];
+  }
+
+  function redraw() {
+    outline.setAttribute("d", pathD());
 
     while (pointsGroup.firstChild) pointsGroup.removeChild(pointsGroup.firstChild);
+    while (handlesGroup.firstChild) handlesGroup.removeChild(handlesGroup.firstChild);
+
+    if (menuIdx !== null && menuIdx < points.length && points[menuIdx].curved) {
+      const p = points[menuIdx];
+      const outX = p.x + p.hx, outY = p.y + p.hy;
+      const inX = p.x - p.hx, inY = p.y - p.hy;
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "handle-line");
+      line.setAttribute("x1", inX); line.setAttribute("y1", inY);
+      line.setAttribute("x2", outX); line.setAttribute("y2", outY);
+      handlesGroup.appendChild(line);
+
+      [["out", outX, outY], ["in", inX, inY]].forEach(([side, hx, hy]) => {
+        const h = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        h.setAttribute("class", "handle");
+        h.setAttribute("cx", hx); h.setAttribute("cy", hy);
+        h.setAttribute("r", HANDLE_RADIUS);
+        h.setAttribute("fill", "#3a86ff");
+        h.setAttribute("stroke", "#ffffff");
+        h.setAttribute("stroke-width", "1.2");
+        h.dataset.idx = menuIdx;
+        h.dataset.side = side;
+        h.addEventListener("pointerdown", onHandleDown);
+        handlesGroup.appendChild(h);
+      });
+    }
+
     points.forEach((p, i) => {
       const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       c.setAttribute("class", "pt");
-      c.setAttribute("cx", p[0]);
-      c.setAttribute("cy", p[1]);
+      c.setAttribute("cx", p.x);
+      c.setAttribute("cy", p.y);
       c.setAttribute("r", RADIUS);
-      c.setAttribute("fill", "#00c853");
+      c.setAttribute("fill", p.curved ? "#3a86ff" : "#00c853");
       c.setAttribute("stroke", "#ffffff");
       c.setAttribute("stroke-width", "1.5");
       c.dataset.idx = i;
@@ -134,12 +183,14 @@
 
   function positionMenu(idx) {
     const p = points[idx];
-    menu.style.left = p[0] + "px";
-    menu.style.top = (p[1] - RADIUS - 8) + "px";
+    menu.style.left = p.x + "px";
+    menu.style.top = (p.y - RADIUS - 8) + "px";
     menu.style.display = "flex";
-    btnSmooth.classList.toggle("active", smooth);
-    btnDel.style.opacity = points.length <= 3 ? "0.4" : "1";
-    btnDel.disabled = points.length <= 3;
+    btnCurve.classList.toggle("active", !!p.curved);
+    btnCurve.textContent = p.curved ? "〰️ Punto curvo (activo)" : "〰️ Punto curvo";
+    const disable = points.length <= 3;
+    btnDel.disabled = disable;
+    btnDel.style.opacity = disable ? "0.4" : "1";
   }
   function hideMenu() {
     menuIdx = null;
@@ -148,57 +199,67 @@
 
   function onPointDown(e) {
     e.stopPropagation();
-    const idx = parseInt(e.target.dataset.idx, 10);
-    dragIdx = idx;
+    dragIdx = parseInt(e.target.dataset.idx, 10);
     dragMoved = false;
-    hideMenu();
+    e.target.setPointerCapture(e.pointerId);
+  }
+
+  function onHandleDown(e) {
+    e.stopPropagation();
+    dragHandle = { idx: parseInt(e.target.dataset.idx, 10), side: e.target.dataset.side };
     e.target.setPointerCapture(e.pointerId);
   }
 
   svg.addEventListener("pointermove", (e) => {
-    if (dragIdx === null) return;
     const [x, y] = toLocal(e);
-    points[dragIdx] = [Math.max(0, Math.min(width, x)), Math.max(0, Math.min(height, y))];
-    dragMoved = true;
-    redraw();
+    if (dragIdx !== null) {
+      const p = points[dragIdx];
+      p.x = Math.max(0, Math.min(width, x));
+      p.y = Math.max(0, Math.min(height, y));
+      dragMoved = true;
+      redraw();
+    } else if (dragHandle !== null) {
+      const p = points[dragHandle.idx];
+      if (dragHandle.side === "out") {
+        p.hx = x - p.x;
+        p.hy = y - p.y;
+      } else {
+        p.hx = p.x - x;
+        p.hy = p.y - y;
+      }
+      redraw();
+    }
   });
 
-  svg.addEventListener("pointerup", (e) => {
-    if (dragIdx === null) return;
-    const idx = dragIdx;
-    if (!dragMoved) {
-      menuIdx = idx;
-      redraw();
-    } else {
+  svg.addEventListener("pointerup", () => {
+    if (dragIdx !== null) {
+      const idx = dragIdx;
+      if (!dragMoved) {
+        menuIdx = idx;
+        redraw();
+      } else {
+        sendValue();
+      }
+      dragIdx = null;
+    } else if (dragHandle !== null) {
+      dragHandle = null;
       sendValue();
     }
-    dragIdx = null;
   });
 
-  function distToSegment(p, a, b) {
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const len2 = dx * dx + dy * dy;
-    let t = len2 === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const projx = a[0] + t * dx, projy = a[1] + t * dy;
-    const ddx = p[0] - projx, ddy = p[1] - projy;
-    return { dist: Math.sqrt(ddx * ddx + ddy * ddy), x: projx, y: projy };
-  }
-
   svg.addEventListener("click", (e) => {
-    if (e.target.classList && e.target.classList.contains("pt")) return;
-    if (menuIdx !== null) { hideMenu(); return; }
+    if (e.target.classList && (e.target.classList.contains("pt") || e.target.classList.contains("handle"))) return;
+    if (menuIdx !== null) { hideMenu(); redraw(); return; }
 
     const [x, y] = toLocal(e);
     let best = null;
     const n = points.length;
     for (let i = 0; i < n; i++) {
-      const a = points[i], b = points[(i + 1) % n];
-      const r = distToSegment([x, y], a, b);
+      const r = closestOnSegment(x, y, points[i], points[(i + 1) % n]);
       if (best === null || r.dist < best.dist) best = Object.assign({ idx: i }, r);
     }
     if (best && best.dist <= ADD_THRESHOLD) {
-      points.splice(best.idx + 1, 0, [best.x, best.y]);
+      points.splice(best.idx + 1, 0, { x: best.x, y: best.y, curved: false, hx: 0, hy: 0 });
       redraw();
       sendValue();
     }
@@ -212,23 +273,32 @@
     sendValue();
   });
 
-  btnSmooth.addEventListener("click", () => {
-    smooth = !smooth;
+  btnCurve.addEventListener("click", () => {
+    if (menuIdx === null) return;
+    const p = points[menuIdx];
+    p.curved = !p.curved;
+    if (p.curved) {
+      const [hx, hy] = defaultHandleLen(menuIdx);
+      p.hx = hx; p.hy = hy;
+    } else {
+      p.hx = 0; p.hy = 0;
+    }
     redraw();
     sendValue();
   });
 
   document.getElementById("wrap").addEventListener("pointerdown", (e) => {
     if (e.target === svg || e.target === bg) {
-      if (menuIdx !== null) hideMenu();
+      if (menuIdx !== null) { hideMenu(); redraw(); }
     }
   });
 
   function render(args) {
     width = args.width;
     height = args.height;
-    points = (args.points || []).map((p) => [p[0], p[1]]);
-    smooth = !!args.smooth;
+    points = (args.points || []).map((p) => ({
+      x: p.x, y: p.y, curved: !!p.curved, hx: p.hx || 0, hy: p.hy || 0,
+    }));
     svg.setAttribute("width", width);
     svg.setAttribute("height", height);
     svg.setAttribute("viewBox", "0 0 " + width + " " + height);
