@@ -11,6 +11,7 @@ import numpy as np
 import cv2
 import os
 import io
+import base64
 import tempfile
 import zipfile
 from PIL import Image, ImageDraw
@@ -20,6 +21,14 @@ from measure_worms import measure_worms, medir_desde_contorno, dibujar_overlay
 from reporte_excel import generar_excel
 
 st.set_page_config(page_title="Medición de gusanos", page_icon="🔬", layout="wide")
+
+
+def _imagen_a_data_uri(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
 
 EXTENSIONES_VALIDAS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff"]
 COLUMNAS_TABLA = ["archivo", "id", "area_um2", "length_um", "revisar_manualmente", "motivo"]
@@ -319,8 +328,21 @@ if resultado is not None:
         puntos_canvas = [((px - x0) * escala, (py - y0) * escala) for px, py in contorno]
         draw.polygon(puntos_canvas, outline=(255, 255, 0), width=2)
 
+        # La imagen va como el primer objeto del dibujo (no como "background_image" de
+        # st_canvas): ese mecanismo arma la URL de fondo concatenando el origen de la
+        # app con la URL recibida SIN chequear si ya es absoluta, así que en Streamlit
+        # Cloud (donde el iframe del componente corre en otro origen) el fondo nunca
+        # carga y el canvas queda con los puntos sueltos, siempre en la misma posición
+        # inicial. Metiendo la imagen dentro de initial_drawing usamos el cargador propio
+        # de fabric.js (vía loadFromJSON), que sí soporta un data: URI sin problema.
+        objetos = [{
+            "type": "image", "version": "4.4.0",
+            "left": 0, "top": 0, "width": canvas_w, "height": canvas_h,
+            "src": _imagen_a_data_uri(crop_img),
+            "selectable": False, "evented": False,
+        }]
+
         radio = 7
-        objetos = []
         for (cx, cy) in puntos_canvas:
             objetos.append({
                 "type": "circle", "left": cx - radio, "top": cy - radio, "radius": radio,
@@ -331,7 +353,6 @@ if resultado is not None:
         st.caption("Arrastrá los puntos verdes para corregir el contorno. El trazo amarillo muestra el contorno original.")
         canvas_key = f"canvas_{sid_corr}_{archivo_corr}_{idx_corr}"
         resultado_canvas = st_canvas(
-            background_image=crop_img,
             height=canvas_h,
             width=canvas_w,
             drawing_mode="transform",
