@@ -65,6 +65,41 @@ def _simplificar_contorno(cnt, n_objetivo=14, intentos=12):
     return aprox.reshape(-1, 2).tolist()
 
 
+def _contorno_control_inicial(cnt, puntos_simplificados, ventana_frac=0.08):
+    """
+    Arma los puntos de control para el editor, ya curvados por defecto (los
+    gusanos son curvos casi siempre; el tramo recto es la excepción). La
+    dirección de la manija de cada punto sale de la forma real del contorno
+    de alta resolución cerca de ese punto -no solo de sus vecinos
+    simplificados-, así el trazado inicial calza con lo que ya detectó el
+    algoritmo automático y hace falta ajustar poco.
+    """
+    cnt_pts = cnt.reshape(-1, 2).astype(float)
+    n_cnt = len(cnt_pts)
+    n = len(puntos_simplificados)
+    ventana = max(3, int(n_cnt * ventana_frac / max(n, 1)))
+
+    resultado = []
+    for i, (px, py) in enumerate(puntos_simplificados):
+        d2 = (cnt_pts[:, 0] - px) ** 2 + (cnt_pts[:, 1] - py) ** 2
+        idx = int(np.argmin(d2))
+
+        p_atras = cnt_pts[(idx - ventana) % n_cnt]
+        p_adelante = cnt_pts[(idx + ventana) % n_cnt]
+        dx, dy = p_adelante[0] - p_atras[0], p_adelante[1] - p_atras[1]
+        largo = (dx ** 2 + dy ** 2) ** 0.5 or 1.0
+        dx, dy = dx / largo, dy / largo
+
+        p_prev = puntos_simplificados[(i - 1) % n]
+        p_next = puntos_simplificados[(i + 1) % n]
+        d_prev = ((px - p_prev[0]) ** 2 + (py - p_prev[1]) ** 2) ** 0.5
+        d_next = ((p_next[0] - px) ** 2 + (p_next[1] - py) ** 2) ** 0.5
+        escala = min(d_prev, d_next) * 0.35
+
+        resultado.append({"x": px, "y": py, "curved": True, "hx": dx * escala, "hy": dy * escala})
+    return resultado
+
+
 def _aplanar_trazado(puntos, muestras_por_tramo=14):
     """
     Convierte un contorno cerrado con manijas de curvatura por punto (estilo
@@ -229,9 +264,10 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
             # contorno anguloso en vez de la curva suave original.
             "contorno": cnt.reshape(-1, 2).tolist(),
             # "contorno_control" es el simplificado (pocos puntos), para el
-            # editor a mano; se reemplaza por el ajustado por el usuario recién
-            # cuando aplica una corrección.
-            "contorno_control": _simplificar_contorno(cnt),
+            # editor a mano, ya curvado por defecto contra el contorno real;
+            # se reemplaza por el ajustado por el usuario recién cuando aplica
+            # una corrección.
+            "contorno_control": _contorno_control_inicial(cnt, _simplificar_contorno(cnt)),
             "skel_points": skel_points,
             "posible_cruce": posible_cruce,
         })

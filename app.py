@@ -350,14 +350,14 @@ if resultado is not None:
             st.session_state[version_key] = 0
 
         # "contorno_control" son los puntos que el usuario edita a mano (pocos,
-        # manejables, con manijas de curvatura por punto); "contorno" es el de
-        # alta resolución, usado para dibujar y medir. Recién detectado,
-        # contorno_control viene simplificado como pares [x,y] planos (de
-        # measure_worms); si ya se corrigió antes, viene con curved/hx/hy.
+        # manejables, con manijas de curvatura por punto, ya curvado por
+        # defecto contra el contorno real detectado); "contorno" es el de alta
+        # resolución, usado para dibujar y medir.
         contorno_control_guardado = fila_corr.get("contorno_control") or []
         if contorno_control_guardado and isinstance(contorno_control_guardado[0], dict):
             contorno_inicial = contorno_control_guardado
         else:
+            # Defensivo: no debería pasar, measure_worms ya guarda el formato rico.
             base = contorno_control_guardado or fila_corr["contorno"]
             contorno_inicial = [{"x": px, "y": py, "curved": False, "hx": 0, "hy": 0} for px, py in base]
 
@@ -386,10 +386,10 @@ if resultado is not None:
         ]
 
         st.caption(
-            "Click en la línea amarilla para agregar un punto ahí. Arrastrá un punto verde para moverlo "
-            "(la línea se actualiza en vivo). Click en un punto sin arrastrar abre un menú para eliminarlo "
-            "o convertirlo en punto curvo (con sus propias manijas, como en Illustrator) — así podés dejar "
-            "tramos rectos y curvar solo donde haga falta."
+            "Los puntos ya arrancan curvados siguiendo la detección automática (los gusanos son curvos "
+            "casi siempre). Arrastrá un punto para moverlo, o su manija celeste para ajustar la curva "
+            "(se actualiza en vivo). Click en la línea agrega un punto ahí. Click en un punto sin arrastrar "
+            "abre un menú para eliminarlo o hacerlo recto donde el cuerpo realmente no se curva."
         )
         pen_key = f"pen_{sid_corr}_{archivo_corr}_{idx_corr}_v{st.session_state[version_key]}"
         resultado_pen = pen_editor(_imagen_a_data_uri(crop_img), canvas_w, canvas_h, puntos_canvas, key=pen_key)

@@ -187,7 +187,7 @@
     menu.style.top = (p.y - RADIUS - 8) + "px";
     menu.style.display = "flex";
     btnCurve.classList.toggle("active", !!p.curved);
-    btnCurve.textContent = p.curved ? "〰️ Punto curvo (activo)" : "〰️ Punto curvo";
+    btnCurve.textContent = p.curved ? "📐 Hacer recto" : "〰️ Curvar este punto";
     const disable = points.length <= 3;
     btnDel.disabled = disable;
     btnDel.style.opacity = disable ? "0.4" : "1";
