@@ -1,0 +1,255 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; font-family: -apple-system, "Segoe UI", sans-serif; }
+  #wrap { position: relative; display: inline-block; user-select: none; -webkit-user-select: none; }
+  svg { display: block; touch-action: none; }
+  .pt { cursor: grab; }
+  .pt:active { cursor: grabbing; }
+  #outline { fill: rgba(255,255,0,0.08); stroke: #ffe100; stroke-width: 2; }
+  #hint { fill: none; stroke: #00c853; stroke-width: 3; stroke-linecap: round; opacity: 0; pointer-events: none; }
+  #menu {
+    position: absolute; display: none; flex-direction: column; gap: 2px;
+    background: #222; border-radius: 6px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    transform: translate(-50%, -100%); z-index: 10;
+  }
+  #menu button {
+    display: block; width: 100%; white-space: nowrap; text-align: left;
+    background: transparent; border: none; color: #fff; font-size: 12px;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+  }
+  #menu button:hover { background: #3a3a3a; }
+  #menu .active { color: #66e07a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <svg id="svg">
+    <image id="bg" href="" x="0" y="0" />
+    <path id="hint" d=""></path>
+    <polygon id="outline" points=""></polygon>
+    <g id="points"></g>
+  </svg>
+  <div id="menu">
+    <button id="btn-del">🗑 Eliminar punto</button>
+    <button id="btn-smooth">〰️ Curva suave</button>
+  </div>
+</div>
+<script>
+(function () {
+  const svg = document.getElementById("svg");
+  const bg = document.getElementById("bg");
+  const outline = document.getElementById("outline");
+  const hint = document.getElementById("hint");
+  const pointsGroup = document.getElementById("points");
+  const menu = document.getElementById("menu");
+  const btnDel = document.getElementById("btn-del");
+  const btnSmooth = document.getElementById("btn-smooth");
+
+  const RADIUS = 7;
+  const ADD_THRESHOLD = 16;
+
+  let points = [];
+  let smooth = false;
+  let width = 400, height = 400;
+  let dragIdx = null;
+  let dragMoved = false;
+  let menuIdx = null;
+  let ready = false;
+
+  function post(msg) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, msg), "*");
+  }
+  function setFrameHeight() {
+    post({ type: "streamlit:setFrameHeight", height: height + 4 });
+  }
+  function sendValue() {
+    post({ type: "streamlit:setComponentValue", value: { points: points, smooth: smooth }, dataType: "json" });
+  }
+
+  function toLocal(e) {
+    const rect = svg.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  }
+
+  // Catmull-Rom -> cubic bezier control points for a closed smooth path (preview only)
+  function smoothPathD(pts) {
+    const n = pts.length;
+    if (n < 3) return "";
+    let d = "M " + pts[0][0] + " " + pts[0][1] + " ";
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n];
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % n];
+      const p3 = pts[(i + 2) % n];
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += "C " + c1x + " " + c1y + ", " + c2x + " " + c2y + ", " + p2[0] + " " + p2[1] + " ";
+    }
+    d += "Z";
+    return d;
+  }
+
+  function redraw() {
+    if (smooth) {
+      outline.setAttribute("points", "");
+      outline.style.display = "none";
+      hint.setAttribute("d", smoothPathD(points));
+      hint.style.opacity = "1";
+      hint.style.stroke = "#ffe100";
+      hint.style.strokeWidth = "2";
+      hint.style.fill = "rgba(255,255,0,0.08)";
+    } else {
+      outline.style.display = "";
+      outline.setAttribute("points", points.map((p) => p[0] + "," + p[1]).join(" "));
+      hint.style.opacity = "0";
+      hint.style.fill = "none";
+    }
+
+    while (pointsGroup.firstChild) pointsGroup.removeChild(pointsGroup.firstChild);
+    points.forEach((p, i) => {
+      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      c.setAttribute("class", "pt");
+      c.setAttribute("cx", p[0]);
+      c.setAttribute("cy", p[1]);
+      c.setAttribute("r", RADIUS);
+      c.setAttribute("fill", "#00c853");
+      c.setAttribute("stroke", "#ffffff");
+      c.setAttribute("stroke-width", "1.5");
+      c.dataset.idx = i;
+      c.addEventListener("pointerdown", onPointDown);
+      pointsGroup.appendChild(c);
+    });
+
+    if (menuIdx !== null && menuIdx < points.length) {
+      positionMenu(menuIdx);
+    } else {
+      hideMenu();
+    }
+  }
+
+  function positionMenu(idx) {
+    const p = points[idx];
+    menu.style.left = p[0] + "px";
+    menu.style.top = (p[1] - RADIUS - 8) + "px";
+    menu.style.display = "flex";
+    btnSmooth.classList.toggle("active", smooth);
+    btnDel.style.opacity = points.length <= 3 ? "0.4" : "1";
+    btnDel.disabled = points.length <= 3;
+  }
+  function hideMenu() {
+    menuIdx = null;
+    menu.style.display = "none";
+  }
+
+  function onPointDown(e) {
+    e.stopPropagation();
+    const idx = parseInt(e.target.dataset.idx, 10);
+    dragIdx = idx;
+    dragMoved = false;
+    hideMenu();
+    e.target.setPointerCapture(e.pointerId);
+  }
+
+  svg.addEventListener("pointermove", (e) => {
+    if (dragIdx === null) return;
+    const [x, y] = toLocal(e);
+    points[dragIdx] = [Math.max(0, Math.min(width, x)), Math.max(0, Math.min(height, y))];
+    dragMoved = true;
+    redraw();
+  });
+
+  svg.addEventListener("pointerup", (e) => {
+    if (dragIdx === null) return;
+    const idx = dragIdx;
+    if (!dragMoved) {
+      menuIdx = idx;
+      redraw();
+    } else {
+      sendValue();
+    }
+    dragIdx = null;
+  });
+
+  function distToSegment(p, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    let t = len2 === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const projx = a[0] + t * dx, projy = a[1] + t * dy;
+    const ddx = p[0] - projx, ddy = p[1] - projy;
+    return { dist: Math.sqrt(ddx * ddx + ddy * ddy), x: projx, y: projy };
+  }
+
+  svg.addEventListener("click", (e) => {
+    if (e.target.classList && e.target.classList.contains("pt")) return;
+    if (menuIdx !== null) { hideMenu(); return; }
+
+    const [x, y] = toLocal(e);
+    let best = null;
+    const n = points.length;
+    for (let i = 0; i < n; i++) {
+      const a = points[i], b = points[(i + 1) % n];
+      const r = distToSegment([x, y], a, b);
+      if (best === null || r.dist < best.dist) best = Object.assign({ idx: i }, r);
+    }
+    if (best && best.dist <= ADD_THRESHOLD) {
+      points.splice(best.idx + 1, 0, [best.x, best.y]);
+      redraw();
+      sendValue();
+    }
+  });
+
+  btnDel.addEventListener("click", () => {
+    if (menuIdx === null || points.length <= 3) return;
+    points.splice(menuIdx, 1);
+    hideMenu();
+    redraw();
+    sendValue();
+  });
+
+  btnSmooth.addEventListener("click", () => {
+    smooth = !smooth;
+    redraw();
+    sendValue();
+  });
+
+  document.getElementById("wrap").addEventListener("pointerdown", (e) => {
+    if (e.target === svg || e.target === bg) {
+      if (menuIdx !== null) hideMenu();
+    }
+  });
+
+  function render(args) {
+    width = args.width;
+    height = args.height;
+    points = (args.points || []).map((p) => [p[0], p[1]]);
+    smooth = !!args.smooth;
+    svg.setAttribute("width", width);
+    svg.setAttribute("height", height);
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    bg.setAttribute("href", args.image);
+    bg.setAttribute("width", width);
+    bg.setAttribute("height", height);
+    redraw();
+    setFrameHeight();
+  }
+
+  window.addEventListener("message", (event) => {
+    if (!event.data || event.data.type !== "streamlit:render") return;
+    render(event.data.args);
+    if (!ready) {
+      ready = true;
+      post({ type: "streamlit:componentReady", apiVersion: 1 });
+    }
+  });
+
+  post({ type: "streamlit:componentReady", apiVersion: 1 });
+})();
+</script>
+</body>
+</html>

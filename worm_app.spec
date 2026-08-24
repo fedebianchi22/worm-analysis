@@ -1,7 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [("app.py", "."), ("measure_worms.py", ".")]
+datas = [
+    ("app.py", "."),
+    ("measure_worms.py", "."),
+    ("reporte_excel.py", "."),
+    ("pen_editor.py", "."),
+    ("pen_editor/index.html", "pen_editor"),
+]
 binaries = []
 hiddenimports = []
 

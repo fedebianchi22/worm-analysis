@@ -7,18 +7,17 @@ se exporta a un único Excel.
 """
 import streamlit as st
 import pandas as pd
-import numpy as np
 import cv2
 import os
 import io
 import base64
 import tempfile
 import zipfile
-from PIL import Image, ImageDraw
-from streamlit_drawable_canvas import st_canvas
+from PIL import Image
 
 from measure_worms import measure_worms, medir_desde_contorno, dibujar_overlay
 from reporte_excel import generar_excel
+from pen_editor import pen_editor
 
 st.set_page_config(page_title="Medición de gusanos", page_icon="🔬", layout="wide")
 
@@ -28,36 +27,6 @@ def _imagen_a_data_uri(image):
     image.save(buffer, format="PNG")
     b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
-
-
-def _duplicar_puntos(puntos):
-    """Inserta un punto medio entre cada par de puntos consecutivos (contorno cerrado)."""
-    nuevos = []
-    n = len(puntos)
-    for i in range(n):
-        p1, p2 = puntos[i], puntos[(i + 1) % n]
-        nuevos.append(p1)
-        nuevos.append([(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2])
-    return nuevos
-
-
-def _leer_puntos_canvas(resultado_canvas, n_esperado, x0, y0, escala, radio):
-    """Lee las posiciones actuales de los círculos del canvas y las vuelve a
-    coordenadas de la imagen original. None si no hay datos o cambió la cantidad."""
-    if not resultado_canvas or not resultado_canvas.json_data:
-        return None
-    objetos_canvas = [o for o in resultado_canvas.json_data.get("objects", []) if o.get("type") == "circle"]
-    if len(objetos_canvas) != n_esperado:
-        return None
-    puntos = []
-    for o in objetos_canvas:
-        escala_x = o.get("scaleX", 1) or 1
-        escala_y = o.get("scaleY", 1) or 1
-        r = o.get("radius", radio)
-        cx = o["left"] + r * escala_x
-        cy = o["top"] + r * escala_y
-        puntos.append([x0 + cx / escala, y0 + cy / escala])
-    return puntos
 
 
 EXTENSIONES_VALIDAS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff"]
@@ -337,18 +306,16 @@ if resultado is not None:
         img_original = cv2.imread(ruta_original)
         img_h, img_w = img_original.shape[:2]
 
-        # Borrador de puntos en edición para este gusano: arranca en el contorno
-        # aplicado y se va actualizando al arrastrar, agregar puntos o reiniciar,
-        # sin perder los cambios todavía no aplicados al cambiar de vista y volver.
-        draft_key = f"draft_{sid_corr}_{archivo_corr}_{idx_corr}"
-        version_key = f"draft_version_{sid_corr}_{archivo_corr}_{idx_corr}"
-        if draft_key not in st.session_state:
-            st.session_state[draft_key] = [list(p) for p in fila_corr["contorno"]]
+        version_key = f"pen_version_{sid_corr}_{archivo_corr}_{idx_corr}"
+        if version_key not in st.session_state:
             st.session_state[version_key] = 0
 
-        contorno = st.session_state[draft_key]
-        xs = [p[0] for p in contorno]
-        ys = [p[1] for p in contorno]
+        # "contorno_control" son los puntos que el usuario edita a mano (pocos,
+        # manejables); "contorno" es lo que se usa para dibujar y medir (si hay
+        # curva suave, es la curva ya muestreada en muchos puntos finos).
+        contorno_inicial = fila_corr.get("contorno_control", fila_corr["contorno"])
+        xs = [p[0] for p in contorno_inicial]
+        ys = [p[1] for p in contorno_inicial]
         margen = 40
         x0 = int(max(0, min(xs) - margen))
         y0 = int(max(0, min(ys) - margen))
@@ -363,85 +330,52 @@ if resultado is not None:
         canvas_w, canvas_h = int(crop_w * escala), int(crop_h * escala)
 
         crop_img = Image.fromarray(crop).resize((canvas_w, canvas_h))
-        draw = ImageDraw.Draw(crop_img)
-        puntos_canvas = [((px - x0) * escala, (py - y0) * escala) for px, py in contorno]
-        draw.polygon(puntos_canvas, outline=(255, 255, 0), width=2)
+        puntos_canvas = [[(px - x0) * escala, (py - y0) * escala] for px, py in contorno_inicial]
 
-        # La imagen va como el primer objeto del dibujo (no como "background_image" de
-        # st_canvas): ese mecanismo arma la URL de fondo concatenando el origen de la
-        # app con la URL recibida SIN chequear si ya es absoluta, así que en Streamlit
-        # Cloud (donde el iframe del componente corre en otro origen) el fondo nunca
-        # carga y el canvas queda con los puntos sueltos, siempre en la misma posición
-        # inicial. Metiendo la imagen dentro de initial_drawing usamos el cargador propio
-        # de fabric.js (vía loadFromJSON), que sí soporta un data: URI sin problema.
-        objetos = [{
-            "type": "image", "version": "4.4.0",
-            "left": 0, "top": 0, "width": canvas_w, "height": canvas_h,
-            "src": _imagen_a_data_uri(crop_img),
-            "selectable": False, "evented": False,
-        }]
-
-        radio = 7
-        for (cx, cy) in puntos_canvas:
-            objetos.append({
-                "type": "circle", "left": cx - radio, "top": cy - radio, "radius": radio,
-                "fill": "#00c853", "stroke": "#ffffff", "strokeWidth": 1,
-                "opacity": 0.95, "selectable": True, "hasControls": False, "hasBorders": False,
-            })
-
-        st.caption("Arrastrá los puntos verdes para corregir el contorno. El trazo amarillo muestra el contorno original. Si la curva queda muy angulosa, agregá puntos intermedios para poder afinarla más.")
-        canvas_key = f"canvas_{sid_corr}_{archivo_corr}_{idx_corr}_v{st.session_state[version_key]}"
-        resultado_canvas = st_canvas(
-            height=canvas_h,
-            width=canvas_w,
-            drawing_mode="transform",
-            initial_drawing={"version": "4.4.0", "objects": objetos},
-            update_streamlit=True,
-            display_toolbar=False,
-            key=canvas_key,
+        st.caption(
+            "Click en la línea amarilla para agregar un punto ahí. Arrastrá un punto verde para moverlo "
+            "(la línea se actualiza en vivo). Click en un punto sin arrastrar abre un menú para eliminarlo "
+            "o activar curva suave."
+        )
+        pen_key = f"pen_{sid_corr}_{archivo_corr}_{idx_corr}_v{st.session_state[version_key]}"
+        resultado_pen = pen_editor(
+            _imagen_a_data_uri(crop_img), canvas_w, canvas_h, puntos_canvas,
+            smooth=fila_corr.get("curva_suave", False), key=pen_key,
         )
 
-        col_a, col_b, col_c = st.columns(3)
+        col_a, col_b = st.columns(2)
         with col_a:
-            agregar_puntos = st.button("➕ Agregar puntos intermedios", key=f"agregar_{draft_key}")
+            reiniciar = st.button("🔄 Reiniciar al último aplicado", key=f"reiniciar_{pen_key}")
         with col_b:
-            reiniciar = st.button("🔄 Reiniciar al último aplicado", key=f"reiniciar_{draft_key}")
-        with col_c:
-            aplicar = st.button("✅ Aplicar corrección", key=f"aplicar_{draft_key}", type="primary")
-
-        if agregar_puntos:
-            leidos = _leer_puntos_canvas(resultado_canvas, len(contorno), x0, y0, escala, radio)
-            base = leidos if leidos is not None else contorno
-            st.session_state[draft_key] = _duplicar_puntos(base)
-            st.session_state[version_key] += 1
-            st.rerun()
+            aplicar = st.button("✅ Aplicar corrección", key=f"aplicar_{pen_key}", type="primary")
 
         if reiniciar:
-            st.session_state[draft_key] = [list(p) for p in fila_corr["contorno"]]
             st.session_state[version_key] += 1
             st.rerun()
 
         if aplicar:
-            nuevo_contorno = _leer_puntos_canvas(resultado_canvas, len(contorno), x0, y0, escala, radio)
-            if nuevo_contorno is None:
-                st.error("No se pudo leer la corrección. Probá de nuevo.")
+            puntos_editados = resultado_pen.get("points") or []
+            if len(puntos_editados) < 3:
+                st.error("Hacen falta al menos 3 puntos.")
             else:
-                nuevo_contorno = [[int(round(x)), int(round(y))] for x, y in nuevo_contorno]
-                medicion = medir_desde_contorno(nuevo_contorno, img_original.shape)
+                nuevo_control = [[x0 + px / escala, y0 + py / escala] for px, py in puntos_editados]
+                curva_suave = bool(resultado_pen.get("smooth"))
+                medicion = medir_desde_contorno(nuevo_control, img_original.shape, curva_suave=curva_suave)
                 fila_corr["area_um2"] = medicion["area_um2"]
                 fila_corr["length_um"] = medicion["length_um"]
-                fila_corr["contorno"] = nuevo_contorno
+                fila_corr["contorno"] = medicion["contorno_dibujo"]
+                fila_corr["contorno_control"] = [[int(round(x)), int(round(y))] for x, y in nuevo_control]
+                fila_corr["curva_suave"] = curva_suave
                 fila_corr["skel_points"] = medicion["skel_points"]
                 fila_corr["posible_cruce"] = medicion["posible_cruce"]
                 fila_corr["revisar_manualmente"] = False
                 fila_corr["motivo"] = "corregido manualmente"
-                st.session_state[draft_key] = [list(p) for p in nuevo_contorno]
-                st.session_state[version_key] += 1
 
                 gusanos_de_la_foto = [f for f in sel_corr["filas"] if f["archivo"] == archivo_corr and f.get("contorno")]
                 ruta_salida = os.path.join(sel_corr["carpeta_salida"], f"anotada_{archivo_corr}")
                 dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
 
+                st.session_state[version_key] += 1
                 st.success("Corrección aplicada.")
                 st.rerun()
 else:

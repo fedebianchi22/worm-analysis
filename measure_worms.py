@@ -65,14 +65,43 @@ def _simplificar_contorno(cnt, n_objetivo=14, intentos=12):
     return aprox.reshape(-1, 2).tolist()
 
 
-def medir_desde_contorno(contorno_puntos, img_shape):
+def _spline_catmull_rom(puntos, muestras_por_tramo=12):
+    """Convierte un contorno cerrado en una curva suave (Catmull-Rom -> Bezier
+    cúbica) muestreada como polígono fino, para el modo "curva suave" del
+    corrector."""
+    n = len(puntos)
+    if n < 3:
+        return puntos
+    fino = []
+    for i in range(n):
+        p0 = np.array(puntos[(i - 1) % n], dtype=float)
+        p1 = np.array(puntos[i], dtype=float)
+        p2 = np.array(puntos[(i + 1) % n], dtype=float)
+        p3 = np.array(puntos[(i + 2) % n], dtype=float)
+        c1 = p1 + (p2 - p0) / 6.0
+        c2 = p2 - (p3 - p1) / 6.0
+        for t in [j / muestras_por_tramo for j in range(muestras_por_tramo)]:
+            punto = (
+                (1 - t) ** 3 * p1
+                + 3 * (1 - t) ** 2 * t * c1
+                + 3 * (1 - t) * t ** 2 * c2
+                + t ** 3 * p2
+            )
+            fino.append(punto.tolist())
+    return fino
+
+
+def medir_desde_contorno(contorno_puntos, img_shape, curva_suave=False):
     """
     Recalcula área y longitud a partir de un contorno editado a mano (lista de
     [x, y]). Se usa desde el corrector de imagen cuando el usuario ajusta los
-    puntos del contorno detectado automáticamente.
+    puntos del contorno detectado automáticamente. Si curva_suave=True, el
+    contorno se interpreta como los puntos de control de una curva suave
+    (Catmull-Rom) en vez de un polígono recto.
     """
+    puntos = _spline_catmull_rom(contorno_puntos) if curva_suave else contorno_puntos
     mask = np.zeros(img_shape[:2], dtype=np.uint8)
-    pts = np.array([contorno_puntos], dtype=np.int32)
+    pts = np.array([puntos], dtype=np.int32)
     cv2.fillPoly(mask, pts, 255)
     mask = _suavizar_mascara(mask)
 
@@ -87,6 +116,7 @@ def medir_desde_contorno(contorno_puntos, img_shape):
         "skel_points": skel_points,
         "junctions": junctions,
         "posible_cruce": len(junctions) > 0,
+        "contorno_dibujo": [[int(round(x)), int(round(y))] for x, y in puntos],
     }
 
 
