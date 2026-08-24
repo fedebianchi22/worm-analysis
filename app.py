@@ -30,6 +30,36 @@ def _imagen_a_data_uri(image):
     return f"data:image/png;base64,{b64}"
 
 
+def _duplicar_puntos(puntos):
+    """Inserta un punto medio entre cada par de puntos consecutivos (contorno cerrado)."""
+    nuevos = []
+    n = len(puntos)
+    for i in range(n):
+        p1, p2 = puntos[i], puntos[(i + 1) % n]
+        nuevos.append(p1)
+        nuevos.append([(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2])
+    return nuevos
+
+
+def _leer_puntos_canvas(resultado_canvas, n_esperado, x0, y0, escala, radio):
+    """Lee las posiciones actuales de los círculos del canvas y las vuelve a
+    coordenadas de la imagen original. None si no hay datos o cambió la cantidad."""
+    if not resultado_canvas or not resultado_canvas.json_data:
+        return None
+    objetos_canvas = [o for o in resultado_canvas.json_data.get("objects", []) if o.get("type") == "circle"]
+    if len(objetos_canvas) != n_esperado:
+        return None
+    puntos = []
+    for o in objetos_canvas:
+        escala_x = o.get("scaleX", 1) or 1
+        escala_y = o.get("scaleY", 1) or 1
+        r = o.get("radius", radio)
+        cx = o["left"] + r * escala_x
+        cy = o["top"] + r * escala_y
+        puntos.append([x0 + cx / escala, y0 + cy / escala])
+    return puntos
+
+
 EXTENSIONES_VALIDAS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff"]
 COLUMNAS_TABLA = ["archivo", "id", "area_um2", "length_um", "revisar_manualmente", "motivo"]
 
@@ -307,14 +337,23 @@ if resultado is not None:
         img_original = cv2.imread(ruta_original)
         img_h, img_w = img_original.shape[:2]
 
-        contorno = fila_corr["contorno"]
+        # Borrador de puntos en edición para este gusano: arranca en el contorno
+        # aplicado y se va actualizando al arrastrar, agregar puntos o reiniciar,
+        # sin perder los cambios todavía no aplicados al cambiar de vista y volver.
+        draft_key = f"draft_{sid_corr}_{archivo_corr}_{idx_corr}"
+        version_key = f"draft_version_{sid_corr}_{archivo_corr}_{idx_corr}"
+        if draft_key not in st.session_state:
+            st.session_state[draft_key] = [list(p) for p in fila_corr["contorno"]]
+            st.session_state[version_key] = 0
+
+        contorno = st.session_state[draft_key]
         xs = [p[0] for p in contorno]
         ys = [p[1] for p in contorno]
         margen = 40
-        x0 = max(0, min(xs) - margen)
-        y0 = max(0, min(ys) - margen)
-        x1 = min(img_w, max(xs) + margen)
-        y1 = min(img_h, max(ys) + margen)
+        x0 = int(max(0, min(xs) - margen))
+        y0 = int(max(0, min(ys) - margen))
+        x1 = int(min(img_w, max(xs) + margen))
+        y1 = int(min(img_h, max(ys) + margen))
 
         crop = cv2.cvtColor(img_original[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)
         crop_h, crop_w = crop.shape[:2]
@@ -350,8 +389,8 @@ if resultado is not None:
                 "opacity": 0.95, "selectable": True, "hasControls": False, "hasBorders": False,
             })
 
-        st.caption("Arrastrá los puntos verdes para corregir el contorno. El trazo amarillo muestra el contorno original.")
-        canvas_key = f"canvas_{sid_corr}_{archivo_corr}_{idx_corr}"
+        st.caption("Arrastrá los puntos verdes para corregir el contorno. El trazo amarillo muestra el contorno original. Si la curva queda muy angulosa, agregá puntos intermedios para poder afinarla más.")
+        canvas_key = f"canvas_{sid_corr}_{archivo_corr}_{idx_corr}_v{st.session_state[version_key]}"
         resultado_canvas = st_canvas(
             height=canvas_h,
             width=canvas_w,
@@ -362,25 +401,32 @@ if resultado is not None:
             key=canvas_key,
         )
 
-        if st.button("✅ Aplicar corrección", key=f"aplicar_{canvas_key}"):
-            objetos_canvas = []
-            if resultado_canvas.json_data:
-                objetos_canvas = [o for o in resultado_canvas.json_data.get("objects", []) if o.get("type") == "circle"]
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            agregar_puntos = st.button("➕ Agregar puntos intermedios", key=f"agregar_{draft_key}")
+        with col_b:
+            reiniciar = st.button("🔄 Reiniciar al último aplicado", key=f"reiniciar_{draft_key}")
+        with col_c:
+            aplicar = st.button("✅ Aplicar corrección", key=f"aplicar_{draft_key}", type="primary")
 
-            if len(objetos_canvas) != len(contorno):
-                st.error("No se pudo leer la corrección (cambió la cantidad de puntos). Probá de nuevo.")
+        if agregar_puntos:
+            leidos = _leer_puntos_canvas(resultado_canvas, len(contorno), x0, y0, escala, radio)
+            base = leidos if leidos is not None else contorno
+            st.session_state[draft_key] = _duplicar_puntos(base)
+            st.session_state[version_key] += 1
+            st.rerun()
+
+        if reiniciar:
+            st.session_state[draft_key] = [list(p) for p in fila_corr["contorno"]]
+            st.session_state[version_key] += 1
+            st.rerun()
+
+        if aplicar:
+            nuevo_contorno = _leer_puntos_canvas(resultado_canvas, len(contorno), x0, y0, escala, radio)
+            if nuevo_contorno is None:
+                st.error("No se pudo leer la corrección. Probá de nuevo.")
             else:
-                nuevo_contorno = []
-                for o in objetos_canvas:
-                    escala_x = o.get("scaleX", 1) or 1
-                    escala_y = o.get("scaleY", 1) or 1
-                    r = o.get("radius", radio)
-                    cx = o["left"] + r * escala_x
-                    cy = o["top"] + r * escala_y
-                    orig_x = x0 + cx / escala
-                    orig_y = y0 + cy / escala
-                    nuevo_contorno.append([int(round(orig_x)), int(round(orig_y))])
-
+                nuevo_contorno = [[int(round(x)), int(round(y))] for x, y in nuevo_contorno]
                 medicion = medir_desde_contorno(nuevo_contorno, img_original.shape)
                 fila_corr["area_um2"] = medicion["area_um2"]
                 fila_corr["length_um"] = medicion["length_um"]
@@ -389,6 +435,8 @@ if resultado is not None:
                 fila_corr["posible_cruce"] = medicion["posible_cruce"]
                 fila_corr["revisar_manualmente"] = False
                 fila_corr["motivo"] = "corregido manualmente"
+                st.session_state[draft_key] = [list(p) for p in nuevo_contorno]
+                st.session_state[version_key] += 1
 
                 gusanos_de_la_foto = [f for f in sel_corr["filas"] if f["archivo"] == archivo_corr and f.get("contorno")]
                 ruta_salida = os.path.join(sel_corr["carpeta_salida"], f"anotada_{archivo_corr}")
