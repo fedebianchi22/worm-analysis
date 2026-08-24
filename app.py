@@ -11,6 +11,7 @@ import cv2
 import os
 import io
 import base64
+import copy
 import tempfile
 import zipfile
 from PIL import Image
@@ -244,11 +245,22 @@ if resultado is not None:
             num_rows="fixed",
             disabled=["archivo", "id"],
         )
-        for i in range(len(editado)):
-            sel["filas"][i]["area_um2"] = editado.iloc[i]["area_um2"]
-            sel["filas"][i]["length_um"] = editado.iloc[i]["length_um"]
-            sel["filas"][i]["revisar_manualmente"] = bool(editado.iloc[i]["revisar_manualmente"])
-            sel["filas"][i]["motivo"] = editado.iloc[i]["motivo"]
+        # Sincronizar por (archivo, id) y no por posición: la tabla se puede
+        # ordenar haciendo click en un header, y ahí el orden de "editado" ya
+        # no coincide con el de sel["filas"] — sincronizar por índice mezclaría
+        # los valores editados entre gusanos distintos.
+        filas_por_clave = {(f["archivo"], f["id"]): f for f in sel["filas"]}
+        for _, fila_editada in editado.iterrows():
+            id_editado = fila_editada["id"]
+            if pd.isna(id_editado):
+                id_editado = None
+            fila = filas_por_clave.get((fila_editada["archivo"], id_editado))
+            if fila is None:
+                continue
+            fila["area_um2"] = fila_editada["area_um2"]
+            fila["length_um"] = fila_editada["length_um"]
+            fila["revisar_manualmente"] = bool(fila_editada["revisar_manualmente"])
+            fila["motivo"] = fila_editada["motivo"]
 
         area, length, n = calcular_promedio(sel["filas"])
         total = len(sel["filas"])
@@ -293,6 +305,8 @@ if resultado is not None:
         sel_corr = resultado["selecciones"][sid_corr]
         archivos_con_datos = list(dict.fromkeys(f["archivo"] for f in sel_corr["filas"] if f.get("contorno")))
         archivo_corr = st.selectbox("Foto", archivos_con_datos, key="corr_archivo")
+        if "_pendiente_corr_idx" in st.session_state:
+            st.session_state["corr_idx"] = st.session_state.pop("_pendiente_corr_idx")
         filas_de_foto = [(i, f) for i, f in enumerate(sel_corr["filas"]) if f["archivo"] == archivo_corr and f.get("contorno")]
         idx_corr = st.selectbox(
             "Gusano",
@@ -305,6 +319,31 @@ if resultado is not None:
         ruta_original = os.path.join(sel_corr["carpeta_entrada"], archivo_corr)
         img_original = cv2.imread(ruta_original)
         img_h, img_w = img_original.shape[:2]
+
+        st.caption("¿Esta detección son en realidad 2 gusanos pegados/cruzados? Separala en 2 y después ajustá cada contorno por separado.")
+        if st.button("✂️ Separar en 2 gusanos", key=f"separar_{sid_corr}_{archivo_corr}_{idx_corr}"):
+            ids_existentes = [f["id"] for f in sel_corr["filas"] if f.get("id") is not None]
+            siguiente_id = (max(ids_existentes) + 1) if ids_existentes else 0
+
+            fila_a = copy.deepcopy(fila_corr)
+            fila_a["id"] = siguiente_id
+            fila_a["motivo"] = "dividido de una detección conjunta - falta ajustar el contorno"
+            fila_a["revisar_manualmente"] = True
+
+            fila_b = copy.deepcopy(fila_corr)
+            fila_b["id"] = siguiente_id + 1
+            fila_b["motivo"] = "dividido de una detección conjunta - falta ajustar el contorno"
+            fila_b["revisar_manualmente"] = True
+
+            sel_corr["filas"][idx_corr:idx_corr + 1] = [fila_a, fila_b]
+
+            gusanos_de_la_foto = [f for f in sel_corr["filas"] if f["archivo"] == archivo_corr and f.get("contorno")]
+            ruta_salida = os.path.join(sel_corr["carpeta_salida"], f"anotada_{archivo_corr}")
+            dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
+
+            st.session_state["_pendiente_corr_idx"] = idx_corr
+            st.success("Separado en 2 — ahora ajustá el contorno de cada uno (arrancan superpuestos, con la misma forma).")
+            st.rerun()
 
         version_key = f"pen_version_{sid_corr}_{archivo_corr}_{idx_corr}"
         if version_key not in st.session_state:
