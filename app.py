@@ -24,6 +24,13 @@ st.set_page_config(page_title="C. elegans Lab", page_icon="🪱", layout="wide")
 
 CSS = """
 <style>
+  /* La app tiene un único tema (violeta, definido en .streamlit/config.toml)
+     con buen contraste. El menú de Streamlit permitía cambiar a un tema
+     "Dark" genérico que no respeta esta paleta y quedaba ilegible, así que
+     se oculta (client.toolbarMode = "minimal") junto con la franja de color
+     decorativa de arriba, que no aporta nada acá. */
+  [data-testid="stDecoration"] { display: none; }
+
   h1, h2, h3 { color: #2B1B44; }
   [data-testid="stMetricValue"] { color: #5E2CA5; }
   div[data-testid="stExpander"] details summary p { color: #5E2CA5; }
@@ -31,6 +38,26 @@ CSS = """
   .stButton > button[kind="primary"]:hover { background-color: #6636C8; border-color: #6636C8; }
   .stDownloadButton > button[kind="primary"] { background-color: #7C4FE0; border-color: #7C4FE0; }
   .stDownloadButton > button[kind="primary"]:hover { background-color: #6636C8; border-color: #6636C8; }
+  .stLinkButton > a[kind="primary"]:hover { background-color: #6636C8; border-color: #6636C8; }
+
+  /* Traducción del selector de archivos (Streamlit no permite cambiar
+     estos textos por parámetro, así que se reemplaza el contenido visual
+     dejando oculto el texto original en inglés). */
+  [data-testid="stFileUploaderDropzoneInstructions"] div > span { font-size: 0; }
+  [data-testid="stFileUploaderDropzoneInstructions"] div > span::after {
+    font-size: 1rem;
+    content: "Arrastrá tus fotos acá";
+  }
+  [data-testid="stFileUploaderDropzoneInstructions"] div > small { font-size: 0; }
+  [data-testid="stFileUploaderDropzoneInstructions"] div > small::after {
+    font-size: 0.8rem;
+    content: "Hasta 200 MB por foto · PNG, JPG, JPEG, BMP, TIF, TIFF";
+  }
+  [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"] { font-size: 0; }
+  [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"]::after {
+    font-size: 0.875rem;
+    content: "Elegir archivos";
+  }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)

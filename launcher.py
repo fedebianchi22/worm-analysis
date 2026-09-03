@@ -52,18 +52,24 @@ if __name__ == "__main__":
     # _internal donde queda copiado .streamlit/config.toml — así que el tema
     # (paleta violeta) no se aplicaría solo con ese archivo. Lo escribimos
     # también en la config global del usuario, que Streamlit siempre lee.
+    # Se reescribe siempre (no solo si falta) para que una actualización del
+    # programa también actualice esta configuración en instalaciones viejas,
+    # ya que este archivo vive fuera de la carpeta del programa y no se toca
+    # al actualizar.
     config_path = os.path.join(streamlit_config_dir, "config.toml")
-    if not os.path.exists(config_path):
-        with open(config_path, "w") as f:
-            f.write(
-                '[theme]\n'
-                'base = "light"\n'
-                'primaryColor = "#7C4FE0"\n'
-                'backgroundColor = "#FBF9FD"\n'
-                'secondaryBackgroundColor = "#EEE6F9"\n'
-                'textColor = "#2B1B44"\n'
-                'font = "sans serif"\n'
-            )
+    with open(config_path, "w") as f:
+        f.write(
+            '[theme]\n'
+            'base = "light"\n'
+            'primaryColor = "#7C4FE0"\n'
+            'backgroundColor = "#FBF9FD"\n'
+            'secondaryBackgroundColor = "#EEE6F9"\n'
+            'textColor = "#2B1B44"\n'
+            'font = "sans serif"\n'
+            '\n'
+            '[client]\n'
+            'toolbarMode = "minimal"\n'
+        )
 
     threading.Thread(target=abrir_navegador, daemon=True).start()
 
