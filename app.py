@@ -93,8 +93,17 @@ def zip_de_carpeta(carpeta, prefijo="anotada_"):
     return buffer
 
 
+URL_DESCARGA_PC = "https://github.com/fedebianchi22/worm-analysis/releases/latest/download/CElegansLab-Windows.zip"
+
 st.title("🪱 C. elegans Lab")
 st.caption("Subí tus fotos de microscopio, medimos cada gusano automáticamente (área y longitud en µm) y te dejamos todo listo para descargar en Excel.")
+
+col_web, col_pc = st.columns([3, 1])
+with col_web:
+    st.caption("Podés usar esta página web tal cual, o instalar el programa en tu computadora para trabajar sin depender de esta página.")
+with col_pc:
+    st.link_button("⬇️ Descargar para PC", URL_DESCARGA_PC, type="primary", use_container_width=True)
+st.caption("Se descarga un .zip: descomprimilo donde quieras y abrí `CElegansLab.exe` (Windows). El programa avisa solo cuando hay una versión nueva.")
 
 st.subheader("1. Fotos a analizar")
 st.caption("Cada selección es un grupo de fotos con su propio nombre — por ejemplo, una placa o una condición del experimento. Podés cargar más de una.")
