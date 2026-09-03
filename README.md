@@ -2,7 +2,8 @@
 
 App que detecta gusanos (*Caenorhabditis elegans*) en fotos de microscopio,
 mide área y longitud en µm, permite corregir a mano lo que haga falta, y
-exporta todo a un Excel prolijo. Corre 100% local (o en Streamlit Cloud) —
+exporta todo a un Excel prolijo. Es un servidor web propio (FastAPI, sin
+frameworks de UI de terceros) que corre 100% local o en un servidor propio —
 las fotos nunca salen de donde se procesan.
 
 ## Calibración por objetivo
@@ -97,19 +98,37 @@ El .exe (junto con su carpeta de soporte) queda en `dist/CElegansLab/`.
 
 ```
 pip install -r requirements.txt
-streamlit run app.py
+uvicorn server:app --reload --port 8501
+```
+
+Y abrís `http://localhost:8501`.
+
+## Desplegar la versión web
+
+Ya no es una app de Streamlit, así que no se puede alojar en Streamlit
+Community Cloud. Al ser un servidor FastAPI estándar, corre en cualquier
+host que acepte una app Python con `uvicorn` (Railway, Render, Fly.io, un
+VPS propio con Docker). El comando de arranque en producción es:
+
+```
+uvicorn server:app --host 0.0.0.0 --port $PORT
 ```
 
 ## Estructura
 
 - `measure_worms.py` — detección y medición automática (segmentación,
   esqueleto, filtros de sombra/ruido/cruces, calibración por objetivo).
-- `app.py` — interfaz Streamlit.
-- `pen_editor.py` / `pen_editor/index.html` — editor de contorno tipo
-  "pluma" (componente propio, sin dependencias externas).
+- `server.py` — servidor FastAPI: todas las rutas de la app (subir fotos,
+  analizar, corregir, exportar).
+- `state.py` — estado en memoria por sesión de navegador (sin base de datos).
+- `templates/` — páginas HTML (Jinja2), una por etapa (cargar, resultados,
+  corregir, exportar) más el layout compartido con la barra lateral.
+- `static/app.css` — todo el diseño visual (paleta violeta, tipografía).
+- `static/pen.js` — editor de contorno tipo "pluma" (agregar/mover/curvar
+  puntos), sin dependencias externas.
 - `reporte_excel.py` — arma el Excel final con las secciones y colores.
-- `.streamlit/config.toml` — tema visual (paleta violeta).
-- `launcher.py` — punto de entrada del .exe (abre el navegador solo).
+- `launcher.py` — punto de entrada del .exe (levanta el servidor y abre el
+  navegador solo).
 - `updater.py` — chequea y aplica actualizaciones automáticas del .exe.
 - `VERSION` — versión instalada actual (la compara `updater.py`).
 - `worm_app.spec` — configuración de PyInstaller.

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="screen-head">
+    <div class="eyebrow">Etapa 2 de 4</div>
+    <h1 class="screen-title">Resultados de tus selecciones</h1>
+    <p class="screen-sub">Así quedaron medidos tus gusanos. Los verdes se midieron solos; los que dicen "revisar" necesitan que los mires en el microscopio o los ajustes en la etapa de corrección.</p>
+  </div>
+
+  <div class="alert-ok">✔ {{ resultado.total_fotos }} fotos analizadas en {{ resultado.selecciones|length }} selección(es).</div>
+
+  {% if resultado.errores %}
+    <div class="alert-warn">
+      <strong>⚠️ {{ resultado.errores|length }} fotos con error al procesar</strong>
+      <ul style="margin:8px 0 0;padding-left:18px">
+        {% for e in resultado.errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if grupos_actuales %}
+    <h2 class="section-title">Promedios por grupo</h2>
+    {% for grupo in grupos_actuales %}
+      <div class="card upload-card">
+        <strong>{{ grupo.nombre }}</strong> — selecciones: {{ (grupo.detalle|map(attribute=0)|list)|join(", ") or "(ninguna)" }}
+        <div class="tiles" style="grid-template-columns:1fr 1fr">
+          <div class="tile"><div class="tile-label">Área promedio</div><div class="tile-value">{{ num(grupo.promedio_area, 1) }} <span class="tile-unit">µm²</span></div></div>
+          <div class="tile"><div class="tile-label">Longitud promedio</div><div class="tile-value">{{ num(grupo.promedio_length, 1) }} <span class="tile-unit">µm</span></div></div>
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% for s in secciones %}
+    <h2 class="section-title">{{ s.nombre }}</h2>
+    <div class="context-bar"><strong>{{ s.nombre }}</strong> · objetivo {{ s.objetivo }} · {{ s.n_fotos }} fotos</div>
+
+    <div class="tiles">
+      <div class="tile"><div class="tile-label">Longitud promedio</div><div class="tile-value">{{ num(s.length, 0) }} <span class="tile-unit">µm</span></div><div class="tile-sub">Referencia adulto: 1.000–1.100 µm</div></div>
+      <div class="tile"><div class="tile-label">Área promedio</div><div class="tile-value">{{ num(s.area, 0) }} <span class="tile-unit">µm²</span></div><div class="tile-sub">Sobre los gusanos confiables</div></div>
+      <div class="tile ok"><div class="tile-label">Medidos automáticamente</div><div class="tile-value">{{ s.total - s.revisar }} <span class="tile-unit">de {{ s.total }}</span></div><div class="tile-sub">No necesitan revisión</div></div>
+      <div class="tile {{ 'warn' if s.revisar else '' }}"><div class="tile-label">Para revisar a mano</div><div class="tile-value">{{ s.revisar }} <span class="tile-unit">de {{ s.total }}</span></div><div class="tile-sub">Gusanos cruzados o en el borde</div></div>
+    </div>
+
+    {% if s.svg_escala %}
+      <div class="card scale-card">
+        <div class="scale-legend">
+          <span><span class="chip-dot" style="color:var(--ok)"></span>Medido automáticamente</span>
+          <span><span class="chip-dot" style="color:var(--warn)"></span>Para revisar</span>
+        </div>
+        {{ s.svg_escala | safe }}
+      </div>
+    {% endif %}
+
+    <h3 class="subsection-title">Fotos analizadas</h3>
+    <div class="gallery">
+      {% for foto in s.fotos %}
+        <div class="card plate-card">
+          <img src="/foto/{{ foto.sel_id }}/{{ foto.archivo }}" alt="{{ foto.archivo }}" loading="lazy">
+          <div class="plate-count">{{ foto.archivo }} · {{ foto.n }} gusano(s){% if foto.n_revisar %} · {{ foto.n_revisar }} para revisar{% endif %}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <h3 class="subsection-title">Detalle por gusano</h3>
+    <p class="field-hint" style="margin-bottom:10px">Podés editar el área, la longitud, y destildar "Revisar a mano" una vez que lo chequeaste en Motic.</p>
+    <form method="post" action="/resultados/{{ s.sel_id }}/guardar">
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th>Archivo</th><th>ID</th><th>Estado</th><th>Área (µm²)</th><th>Longitud (µm)</th><th>Revisar a mano</th><th>Motivo</th></tr></thead>
+          <tbody>
+            {% for i, f in s.filas %}
+              <tr>
+                <td>{{ f.archivo }}</td>
+                <td class="num">{{ f.id if f.id is not none else "—" }}</td>
+                <td>
+                  {% if f.revisar_manualmente %}<span class="chip chip-warn"><span class="chip-dot"></span>Revisar</span>
+                  {% else %}<span class="chip chip-ok"><span class="chip-dot"></span>Automático</span>{% endif %}
+                </td>
+                <td><input class="table-input" type="number" step="0.1" name="area_{{ i }}" value="{{ f.area_um2 if f.area_um2 is not none else '' }}"></td>
+                <td><input class="table-input" type="number" step="0.1" name="length_{{ i }}" value="{{ f.length_um if f.length_um is not none else '' }}"></td>
+                <td style="text-align:center"><input type="checkbox" name="revisar_{{ i }}" {{ 'checked' if f.revisar_manualmente else '' }}></td>
+                <td><input class="table-input-text" type="text" name="motivo_{{ i }}" value="{{ f.motivo or '' }}"></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-secondary" type="submit">💾 Guardar cambios de "{{ s.nombre }}"</button>
+    </form>
+  {% endfor %}
+
+  <div class="cta-row">
+    <a class="btn btn-primary {{ 'btn-primary' if total_revisar_global else 'btn-secondary' }}" href="/corregir" {{ 'style=pointer-events:none;opacity:.5' if total_revisar_global == 0 else '' }}>
+      Corregir detecciones pendientes ({{ total_revisar_global }}) →
+    </a>
+  </div>
+{% endblock %}

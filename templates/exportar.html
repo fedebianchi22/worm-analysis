@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="screen-head">
+    <div class="eyebrow">Etapa 4 de 4</div>
+    <h1 class="screen-title">Exportá tus mediciones</h1>
+    <p class="screen-sub">Bajá el Excel con todas las selecciones y sus promedios, o las fotos anotadas de una selección puntual.</p>
+  </div>
+
+  <div class="card export-hero">
+    <div class="export-check">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+    </div>
+    <div>
+      <h2>Todo listo</h2>
+      <p>{{ total_fotos }} fotos · {{ total_gusanos }} gusanos medidos · {{ total_gusanos - total_revisar }} automáticos · {{ total_revisar }} revisados a mano</p>
+    </div>
+  </div>
+
+  <h2 class="section-title">Descargas</h2>
+  <div class="export-grid">
+    <div class="card export-card">
+      <h3>Excel con todas las selecciones</h3>
+      <p>Cada selección en su sección, con promedios y, si armaste grupos, el promedio entre selecciones.</p>
+      <span class="export-file">mediciones_c_elegans.xlsx</span>
+      <a class="btn btn-primary btn-block" href="/exportar/excel">⬇ Descargar Excel</a>
+    </div>
+    <div class="card export-card">
+      <h3>Fotos anotadas</h3>
+      <p>Descargá, por selección, las fotos originales con los contornos detectados dibujados encima.</p>
+      {% for sel_id, sel in resultado.selecciones.items() %}
+        <a class="btn btn-secondary btn-block" href="/exportar/zip/{{ sel_id }}">⬇ "{{ sel.nombre }}" (.zip)</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <h2 class="section-title">¿Preferís usarlo sin el navegador?</h2>
+  <div class="card desktop-card">
+    <div class="desktop-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>
+    </div>
+    <div>
+      <h3>Programa para tu computadora</h3>
+      <p>Corre local, sin depender de esta página, y avisa solo cuando hay una versión nueva.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ URL_DESCARGA_PC }}">⬇ Descargar para PC</a>
+  </div>
+{% endblock %}

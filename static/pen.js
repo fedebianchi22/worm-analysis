@@ -1,79 +1,19 @@
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; font-family: -apple-system, "Segoe UI", sans-serif; }
-  #wrap { position: relative; display: inline-block; user-select: none; -webkit-user-select: none; }
-  svg { display: block; touch-action: none; }
-  .pt { cursor: grab; }
-  .pt:active { cursor: grabbing; }
-  .handle { cursor: grab; }
-  .handle:active { cursor: grabbing; }
-  .handle-line { stroke: #66aaff; stroke-width: 1.5; pointer-events: none; }
-  #outline { fill: rgba(255,225,0,0.08); stroke: #ffe100; stroke-width: 2; }
-  #menu {
-    position: absolute; display: none; flex-direction: column; gap: 2px;
-    background: #222; border-radius: 6px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    transform: translate(-50%, -100%); z-index: 10;
-  }
-  #menu button {
-    display: block; width: 100%; white-space: nowrap; text-align: left;
-    background: transparent; border: none; color: #fff; font-size: 12px;
-    padding: 5px 10px; border-radius: 4px; cursor: pointer;
-  }
-  #menu button:hover { background: #3a3a3a; }
-  #menu button.active { color: #66e07a; }
-  #menu button:disabled { opacity: 0.4; cursor: default; }
-  #menu button:disabled:hover { background: transparent; }
-</style>
-</head>
-<body>
-<div id="wrap">
-  <svg id="svg">
-    <image id="bg" href="" x="0" y="0" />
-    <path id="outline" d=""></path>
-    <g id="handles"></g>
-    <g id="points"></g>
-  </svg>
-  <div id="menu">
-    <button id="btn-del">🗑 Eliminar punto</button>
-    <button id="btn-curve">〰️ Punto curvo</button>
-  </div>
-</div>
-<script>
-(function () {
-  const svg = document.getElementById("svg");
-  const bg = document.getElementById("bg");
-  const outline = document.getElementById("outline");
-  const pointsGroup = document.getElementById("points");
-  const handlesGroup = document.getElementById("handles");
-  const menu = document.getElementById("menu");
-  const btnDel = document.getElementById("btn-del");
-  const btnCurve = document.getElementById("btn-curve");
-
+/* Editor de contorno tipo "pluma" (Photoshop). Dibuja sobre un <svg>, sin
+   dependencias externas. Se inicializa con CelabPen.iniciar(...) y expone
+   CelabPen.puntosActuales() para leer el resultado antes de enviarlo. */
+window.CelabPen = (function () {
   const RADIUS = 7;
   const HANDLE_RADIUS = 5;
   const ADD_THRESHOLD = 16;
   const CURVE_SAMPLES = 16;
 
-  let points = []; // [{x,y,curved,hx,hy}, ...]
+  let svg, outline, pointsGroup, handlesGroup, menu, btnDel, btnCurve;
+  let points = [];
   let width = 400, height = 400;
-  let dragIdx = null;       // arrastrando un punto
-  let dragHandle = null;    // {idx, side: 'in'|'out'}
+  let dragIdx = null;
+  let dragHandle = null;
   let dragMoved = false;
   let menuIdx = null;
-  let ready = false;
-
-  function post(msg) {
-    window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, msg), "*");
-  }
-  function setFrameHeight() {
-    post({ type: "streamlit:setFrameHeight", height: height + 4 });
-  }
-  function sendValue() {
-    post({ type: "streamlit:setComponentValue", value: { points: points }, dataType: "json" });
-  }
 
   function toLocal(e) {
     const rect = svg.getBoundingClientRect();
@@ -130,7 +70,6 @@
 
   function redraw() {
     outline.setAttribute("d", pathD());
-
     while (pointsGroup.firstChild) pointsGroup.removeChild(pointsGroup.firstChild);
     while (handlesGroup.firstChild) handlesGroup.removeChild(handlesGroup.firstChild);
 
@@ -138,13 +77,11 @@
       const p = points[menuIdx];
       const outX = p.x + p.hx, outY = p.y + p.hy;
       const inX = p.x - p.hx, inY = p.y - p.hy;
-
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "handle-line");
       line.setAttribute("x1", inX); line.setAttribute("y1", inY);
       line.setAttribute("x2", outX); line.setAttribute("y2", outY);
       handlesGroup.appendChild(line);
-
       [["out", outX, outY], ["in", inX, inY]].forEach(([side, hx, hy]) => {
         const h = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         h.setAttribute("class", "handle");
@@ -174,11 +111,8 @@
       pointsGroup.appendChild(c);
     });
 
-    if (menuIdx !== null && menuIdx < points.length) {
-      positionMenu(menuIdx);
-    } else {
-      hideMenu();
-    }
+    if (menuIdx !== null && menuIdx < points.length) positionMenu(menuIdx);
+    else hideMenu();
   }
 
   function positionMenu(idx) {
@@ -187,15 +121,11 @@
     menu.style.top = (p.y - RADIUS - 8) + "px";
     menu.style.display = "flex";
     btnCurve.classList.toggle("active", !!p.curved);
-    btnCurve.textContent = p.curved ? "📐 Hacer recto" : "〰️ Curvar este punto";
+    btnCurve.textContent = p.curved ? "Hacer recto" : "Curvar este punto";
     const disable = points.length <= 3;
     btnDel.disabled = disable;
-    btnDel.style.opacity = disable ? "0.4" : "1";
   }
-  function hideMenu() {
-    menuIdx = null;
-    menu.style.display = "none";
-  }
+  function hideMenu() { menuIdx = null; menu.style.display = "none"; }
 
   function onPointDown(e) {
     e.stopPropagation();
@@ -203,14 +133,13 @@
     dragMoved = false;
     e.target.setPointerCapture(e.pointerId);
   }
-
   function onHandleDown(e) {
     e.stopPropagation();
     dragHandle = { idx: parseInt(e.target.dataset.idx, 10), side: e.target.dataset.side };
     e.target.setPointerCapture(e.pointerId);
   }
 
-  svg.addEventListener("pointermove", (e) => {
+  function onPointerMove(e) {
     const [x, y] = toLocal(e);
     if (dragIdx !== null) {
       const p = points[dragIdx];
@@ -220,37 +149,22 @@
       redraw();
     } else if (dragHandle !== null) {
       const p = points[dragHandle.idx];
-      if (dragHandle.side === "out") {
-        p.hx = x - p.x;
-        p.hy = y - p.y;
-      } else {
-        p.hx = p.x - x;
-        p.hy = p.y - y;
-      }
+      if (dragHandle.side === "out") { p.hx = x - p.x; p.hy = y - p.y; }
+      else { p.hx = p.x - x; p.hy = p.y - y; }
       redraw();
     }
-  });
-
-  svg.addEventListener("pointerup", () => {
+  }
+  function onPointerUp() {
     if (dragIdx !== null) {
-      const idx = dragIdx;
-      if (!dragMoved) {
-        menuIdx = idx;
-        redraw();
-      } else {
-        sendValue();
-      }
+      if (!dragMoved) { menuIdx = dragIdx; redraw(); }
       dragIdx = null;
     } else if (dragHandle !== null) {
       dragHandle = null;
-      sendValue();
     }
-  });
-
-  svg.addEventListener("click", (e) => {
+  }
+  function onClick(e) {
     if (e.target.classList && (e.target.classList.contains("pt") || e.target.classList.contains("handle"))) return;
     if (menuIdx !== null) { hideMenu(); redraw(); return; }
-
     const [x, y] = toLocal(e);
     let best = null;
     const n = points.length;
@@ -261,65 +175,47 @@
     if (best && best.dist <= ADD_THRESHOLD) {
       points.splice(best.idx + 1, 0, { x: best.x, y: best.y, curved: false, hx: 0, hy: 0 });
       redraw();
-      sendValue();
     }
-  });
-
-  btnDel.addEventListener("click", () => {
-    if (menuIdx === null || points.length <= 3) return;
-    points.splice(menuIdx, 1);
-    hideMenu();
-    redraw();
-    sendValue();
-  });
-
-  btnCurve.addEventListener("click", () => {
-    if (menuIdx === null) return;
-    const p = points[menuIdx];
-    p.curved = !p.curved;
-    if (p.curved) {
-      const [hx, hy] = defaultHandleLen(menuIdx);
-      p.hx = hx; p.hy = hy;
-    } else {
-      p.hx = 0; p.hy = 0;
-    }
-    redraw();
-    sendValue();
-  });
-
-  document.getElementById("wrap").addEventListener("pointerdown", (e) => {
-    if (e.target === svg || e.target === bg) {
-      if (menuIdx !== null) { hideMenu(); redraw(); }
-    }
-  });
-
-  function render(args) {
-    width = args.width;
-    height = args.height;
-    points = (args.points || []).map((p) => ({
-      x: p.x, y: p.y, curved: !!p.curved, hx: p.hx || 0, hy: p.hy || 0,
-    }));
-    svg.setAttribute("width", width);
-    svg.setAttribute("height", height);
-    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    bg.setAttribute("href", args.image);
-    bg.setAttribute("width", width);
-    bg.setAttribute("height", height);
-    redraw();
-    setFrameHeight();
   }
 
-  window.addEventListener("message", (event) => {
-    if (!event.data || event.data.type !== "streamlit:render") return;
-    render(event.data.args);
-    if (!ready) {
-      ready = true;
-      post({ type: "streamlit:componentReady", apiVersion: 1 });
-    }
-  });
+  function iniciar(cfg) {
+    svg = document.getElementById(cfg.svgId);
+    outline = document.getElementById(cfg.outlineId);
+    pointsGroup = document.getElementById(cfg.pointsId);
+    handlesGroup = document.getElementById(cfg.handlesId);
+    menu = document.getElementById(cfg.menuId);
+    btnDel = document.getElementById(cfg.btnDelId);
+    btnCurve = document.getElementById(cfg.btnCurveId);
+    width = cfg.width;
+    height = cfg.height;
+    points = (cfg.points || []).map((p) => ({ x: p.x, y: p.y, curved: !!p.curved, hx: p.hx || 0, hy: p.hy || 0 }));
 
-  post({ type: "streamlit:componentReady", apiVersion: 1 });
+    svg.addEventListener("pointermove", onPointerMove);
+    svg.addEventListener("pointerup", onPointerUp);
+    svg.addEventListener("click", onClick);
+    btnDel.addEventListener("click", () => {
+      if (menuIdx === null || points.length <= 3) return;
+      points.splice(menuIdx, 1);
+      hideMenu();
+      redraw();
+    });
+    btnCurve.addEventListener("click", () => {
+      if (menuIdx === null) return;
+      const p = points[menuIdx];
+      p.curved = !p.curved;
+      if (p.curved) { const [hx, hy] = defaultHandleLen(menuIdx); p.hx = hx; p.hy = hy; }
+      else { p.hx = 0; p.hy = 0; }
+      redraw();
+    });
+    document.getElementById(cfg.wrapId).addEventListener("pointerdown", (e) => {
+      if (e.target === svg || e.target.id === cfg.bgId) {
+        if (menuIdx !== null) { hideMenu(); redraw(); }
+      }
+    });
+    redraw();
+  }
+
+  function puntosActuales() { return points; }
+
+  return { iniciar, puntosActuales };
 })();
-</script>
-</body>
-</html>

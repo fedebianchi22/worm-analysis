@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C. elegans Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪱</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <svg class="brand-reticle" viewBox="0 0 120 120" fill="none">
+        <circle cx="60" cy="60" r="52" stroke="var(--accent)" stroke-width="1"/>
+        <circle cx="60" cy="60" r="34" stroke="var(--accent)" stroke-width="1"/>
+        <circle cx="60" cy="60" r="16" stroke="var(--accent)" stroke-width="1"/>
+        <line x1="60" y1="2" x2="60" y2="118" stroke="var(--accent)" stroke-width="1"/>
+        <line x1="2" y1="60" x2="118" y2="60" stroke="var(--accent)" stroke-width="1"/>
+      </svg>
+      <div class="brand-row">
+        <div class="brand-icon">🪱</div>
+        <div class="brand-name">C. elegans<br>Lab</div>
+      </div>
+      <div class="brand-tag">Morfometría de nematodos</div>
+    </div>
+
+    <nav class="stages">
+      {% set items = [("cargar", "1", "Cargar fotos"), ("resultados", "2", "Resultados"), ("corregir", "3", "Corregir detección"), ("exportar", "4", "Exportar")] %}
+      {% for clave, numero, etiqueta in items %}
+        {% set activa = etapa == clave %}
+        {% set bloqueada = (not hay_resultado) and clave != "cargar" %}
+        <a class="stage-btn {{ 'is-active' if activa else '' }} {{ 'is-disabled' if bloqueada else '' }}"
+           href="{{ '#' if bloqueada else '/' + clave }}">
+          <span class="stage-num">{{ numero }}</span>
+          <span class="stage-label">{{ etiqueta }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    {% if resumen_sidebar %}
+      <div class="rail-selection">{{ resumen_sidebar }}</div>
+    {% endif %}
+
+    <div class="rail-footer">Versión {{ VERSION }} · Las fotos se procesan en esta computadora y no se suben a ningún lado.</div>
+  </aside>
+
+  <main class="stage-wrap">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

@@ -2,18 +2,14 @@
 from PyInstaller.utils.hooks import collect_all
 
 datas = [
-    ("app.py", "."),
-    ("measure_worms.py", "."),
-    ("reporte_excel.py", "."),
-    ("pen_editor.py", "."),
-    ("pen_editor/index.html", "pen_editor"),
-    (".streamlit/config.toml", ".streamlit"),
+    ("templates", "templates"),
+    ("static", "static"),
     ("VERSION", "."),
 ]
 binaries = []
 hiddenimports = []
 
-for pkg in ["streamlit", "altair", "pyarrow", "pandas", "numpy", "scipy", "skimage", "networkx", "cv2"]:
+for pkg in ["fastapi", "uvicorn", "starlette", "multipart", "numpy", "scipy", "skimage", "networkx", "cv2"]:
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -31,6 +27,10 @@ a = Analysis(
         "numpy._core.multiarray",
         "scipy._cyutility",
         "scipy.special._cdflib",
+        "uvicorn.loops.auto",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.lifespan.on",
     ],
     hookspath=[],
     hooksconfig={},

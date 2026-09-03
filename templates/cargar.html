@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="screen-head">
+    <div class="eyebrow">Etapa 1 de 4</div>
+    <h1 class="screen-title">Cargá las fotos de tu placa</h1>
+    <p class="screen-sub">Cada selección junta las fotos de una misma placa o condición, con el objetivo del microscopio con el que se sacaron. Podés cargar varias selecciones antes de analizar.</p>
+  </div>
+
+  {% for sel_id, sel in selecciones.items() %}
+    <div class="card upload-card">
+      <div class="row-top">
+        <form class="name-form" method="post" action="/cargar/{{ sel_id }}/nombre">
+          <label class="field-label">Nombre de la selección</label>
+          <input class="field-input" type="text" name="nombre" value="{{ sel.nombre }}" onchange="this.form.submit()">
+        </form>
+        {% if selecciones|length > 1 %}
+          <form method="post" action="/cargar/{{ sel_id }}/eliminar">
+            <button class="btn btn-ghost" type="submit">🗑 Eliminar</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <div>
+        <label class="field-label">Objetivo del microscopio</label>
+        <div class="obj-picker">
+          {% for opt in OPCIONES_OBJETIVO %}
+            <form class="inline-form" method="post" action="/cargar/{{ sel_id }}/objetivo">
+              <input type="hidden" name="objetivo" value="{{ opt }}">
+              <button class="obj-chip {{ 'is-selected' if sel.objetivo == opt else '' }}" type="submit">{{ opt }}</button>
+            </form>
+          {% endfor %}
+        </div>
+        <div class="field-hint">Calibrado con la regla Motic — define cuántos µm equivale cada píxel.</div>
+      </div>
+
+      <div>
+        <label class="field-label">Fotos de esta selección</label>
+        <form method="post" action="/cargar/{{ sel_id }}/fotos" enctype="multipart/form-data">
+          <div class="dropzone">
+            <input type="file" name="fotos" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff" onchange="this.form.submit()">
+            <div class="dropzone-inner">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <div class="dropzone-title">Arrastrá tus fotos acá</div>
+              <div class="dropzone-hint">Hasta 200 MB por foto · PNG, JPG, JPEG, BMP, TIF, TIFF</div>
+              <span class="btn btn-secondary">Elegir archivos</span>
+            </div>
+          </div>
+        </form>
+
+        {% if sel.archivos %}
+          <div class="thumb-row" style="margin-top:14px">
+            {% for archivo in sel.archivos %}
+              <div class="thumb">
+                <div class="thumb-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 8"/></svg>
+                </div>
+                <div class="thumb-meta">
+                  <div class="thumb-name">{{ archivo.nombre }}</div>
+                  <div class="thumb-size">{{ "%.1f"|format(archivo.tamano / 1024 / 1024) }} MB</div>
+                </div>
+                <form method="post" action="/cargar/{{ sel_id }}/fotos/eliminar">
+                  <input type="hidden" name="nombre" value="{{ archivo.nombre }}">
+                  <button class="thumb-x" type="submit">×</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+
+  <div class="add-row">
+    <form method="post" action="/cargar/agregar-seleccion">
+      <button class="btn btn-secondary" type="submit">➕ Agregar otra selección</button>
+    </form>
+    <span class="field-hint">¿Dos selecciones son réplicas de la misma condición? Después las podés agrupar para promediarlas.</span>
+  </div>
+
+  <h2 class="section-title">Promediar entre selecciones (opcional)</h2>
+  <p class="screen-sub">¿Dos o más selecciones son réplicas de la misma condición y hay que promediarlas entre sí? El promedio del grupo es el promedio de los promedios de cada selección incluida.</p>
+
+  {% for gid, grupo in grupos.items() %}
+    <div class="card upload-card">
+      <div class="row-top">
+        <form class="name-form" method="post" action="/cargar/grupos/{{ gid }}/nombre">
+          <label class="field-label">Nombre del grupo</label>
+          <input class="field-input" type="text" name="nombre" value="{{ grupo.nombre }}" onchange="this.form.submit()">
+        </form>
+        <form method="post" action="/cargar/grupos/{{ gid }}/eliminar">
+          <button class="btn btn-ghost" type="submit">🗑 Eliminar</button>
+        </form>
+      </div>
+      <div>
+        <label class="field-label">Selecciones que integran este grupo</label>
+        <form method="post" action="/cargar/grupos/{{ gid }}/selecciones">
+          {% for sid, nombre in nombres_actuales.items() %}
+            <label class="checkbox-row">
+              <input type="checkbox" name="sids" value="{{ sid }}" {{ 'checked' if sid in grupo.sids else '' }} onchange="this.form.submit()">
+              {{ nombre }}
+            </label>
+          {% endfor %}
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+
+  <form method="post" action="/cargar/grupos/agregar">
+    <button class="btn btn-secondary" type="submit">➕ Agregar grupo a promediar</button>
+  </form>
+
+  <div class="cta-row">
+    <form method="post" action="/analizar">
+      <button class="btn btn-primary" type="submit" {{ 'disabled' if not hay_fotos else '' }}>▶️ Analizar fotos →</button>
+    </form>
+  </div>
+  {% if not hay_fotos %}
+    <p class="field-hint" style="text-align:right">Subí las fotos en al menos una selección para poder analizar.</p>
+  {% endif %}
+{% endblock %}

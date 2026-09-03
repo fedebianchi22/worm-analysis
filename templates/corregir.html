@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="screen-head">
+    <div class="eyebrow">Etapa 3 de 4</div>
+    <h1 class="screen-title">Corregí una detección</h1>
+    <p class="screen-sub">Elegí un gusano y ajustá su contorno a mano. Al aplicar la corrección se recalculan el área y la longitud, y se destilda "revisar manualmente".</p>
+  </div>
+
+  {% if sin_datos %}
+    <p>Todavía no hay gusanos detectados para corregir.</p>
+  {% else %}
+    <form class="selector-row" method="get" action="/corregir">
+      <div>
+        <label class="field-label">Selección</label>
+        <select name="sid_sel" onchange="this.form.submit()">
+          {% for s in sids_con_datos %}
+            <option value="{{ s }}" {{ 'selected' if s == sid_sel else '' }}>{{ selecciones[s].nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Foto</label>
+        <select name="archivo" onchange="this.form.submit()">
+          {% for a in archivos_con_datos %}
+            <option value="{{ a }}" {{ 'selected' if a == archivo else '' }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Gusano</label>
+        <select name="idx" onchange="this.form.submit()">
+          {% for i, f in filas_de_foto %}
+            <option value="{{ i }}" {{ 'selected' if i == idx else '' }}>#{{ f.id }} (largo={{ f.length_um }}µm, área={{ f.area_um2 }}µm²)</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
+    <div class="context-bar">Editando <strong>{{ archivo }} — gusano #{{ fila_corr.id }}</strong> · {{ motivo_actual }}</div>
+
+    <div class="fix-layout">
+      <div class="card fix-canvas">
+        <div class="fix-canvas-frame" id="pen-wrap" style="width:{{ canvas_w }}px;max-width:100%">
+          <svg id="pen-svg" width="{{ canvas_w }}" height="{{ canvas_h }}" viewBox="0 0 {{ canvas_w }} {{ canvas_h }}" style="display:block;touch-action:none;max-width:100%;height:auto">
+            <image id="pen-bg" href="{{ imagen_data_uri }}" x="0" y="0" width="{{ canvas_w }}" height="{{ canvas_h }}"/>
+            <path id="pen-outline" d="" fill="rgba(255,225,0,0.08)" stroke="#ffe100" stroke-width="2"></path>
+            <g id="pen-handles"></g>
+            <g id="pen-points"></g>
+          </svg>
+          <div id="pen-menu" style="position:absolute;display:none;flex-direction:column;gap:2px;background:#222;border-radius:6px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.4);transform:translate(-50%,-100%);z-index:10">
+            <button id="pen-btn-del" type="button" style="display:block;width:100%;white-space:nowrap;text-align:left;background:transparent;border:none;color:#fff;font-size:12px;padding:5px 10px;border-radius:4px;cursor:pointer">🗑 Eliminar punto</button>
+            <button id="pen-btn-curve" type="button" style="display:block;width:100%;white-space:nowrap;text-align:left;background:transparent;border:none;color:#fff;font-size:12px;padding:5px 10px;border-radius:4px;cursor:pointer">〰️ Punto curvo</button>
+          </div>
+        </div>
+        <div class="fix-legend">
+          <span><svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#3a86ff"/></svg>Punto del contorno (curvo)</span>
+          <span><svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#00c853"/></svg>Punto recto</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="card fix-actions" style="padding:18px">
+          <ol class="steps-list">
+            <li><span class="n">1</span>Hacé clic sobre la línea para agregar un punto nuevo.</li>
+            <li><span class="n">2</span>Arrastrá un punto para moverlo, o su manija celeste para ajustar la curva — se actualiza en vivo.</li>
+            <li><span class="n">3</span>Hacé clic en un punto sin arrastrar para curvarlo o eliminarlo.</li>
+          </ol>
+
+          <form id="form-aplicar" method="post" action="/corregir/aplicar">
+            <input type="hidden" name="sid_sel" value="{{ sid_sel }}">
+            <input type="hidden" name="archivo" value="{{ archivo }}">
+            <input type="hidden" name="idx" value="{{ idx }}">
+            <input type="hidden" name="escala" value="{{ escala }}">
+            <input type="hidden" name="x0" value="{{ x0 }}">
+            <input type="hidden" name="y0" value="{{ y0 }}">
+            <input type="hidden" name="puntos" id="pen-puntos-input">
+            <button class="btn btn-primary btn-block" type="submit">✅ Aplicar corrección</button>
+          </form>
+
+          <p class="fix-note">¿Esta detección son en realidad 2 gusanos pegados o cruzados? Separala en 2 y después ajustá cada contorno por separado.</p>
+          <form method="post" action="/corregir/separar">
+            <input type="hidden" name="sid_sel" value="{{ sid_sel }}">
+            <input type="hidden" name="archivo" value="{{ archivo }}">
+            <input type="hidden" name="idx" value="{{ idx }}">
+            <button class="btn btn-secondary btn-block" type="submit">✂️ Separar en 2 gusanos</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/pen.js"></script>
+    <script>
+      CelabPen.iniciar({
+        wrapId: "pen-wrap", svgId: "pen-svg", bgId: "pen-bg", outlineId: "pen-outline",
+        pointsId: "pen-points", handlesId: "pen-handles", menuId: "pen-menu",
+        btnDelId: "pen-btn-del", btnCurveId: "pen-btn-curve",
+        width: {{ canvas_w }}, height: {{ canvas_h }},
+        points: {{ puntos_canvas_json | safe }},
+      });
+      document.getElementById("form-aplicar").addEventListener("submit", function () {
+        document.getElementById("pen-puntos-input").value = JSON.stringify(CelabPen.puntosActuales());
+      });
+    </script>
+  {% endif %}
+{% endblock %}
