@@ -176,3 +176,15 @@ uvicorn server:app --host 0.0.0.0 --port $PORT
 Las fotos y las mediciones se procesan enteramente en la máquina donde
 corre la app (o en el servidor propio, si se despliega uno) y no se envían
 a ningún servicio de terceros.
+
+## Licencia y uso
+
+Este repositorio no tiene una licencia de código abierto: todos los
+derechos están reservados. El código es público para que se pueda ver,
+pero **no está permitido copiarlo, modificarlo, redistribuirlo ni
+revenderlo sin autorización previa del autor**. Sí está permitido usar la
+aplicación (la versión web o el programa de escritorio) tal como se
+distribuye.
+
+Para pedir autorización de uso o colaborar, abrí un issue en este
+repositorio.
