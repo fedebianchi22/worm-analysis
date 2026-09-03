@@ -1,9 +1,9 @@
 """
-App de medición de gusanos - laboratorio de biotecnología
-Subí una o más selecciones de fotos (cada una con su nombre), medí los
-gusanos automáticamente (área y longitud en µm), corregí a mano lo que
-haga falta, y armá grupos de selecciones para promediar entre sí. Todo
-se exporta a un único Excel.
+C. elegans Lab — medición automática de nematodos en fotos de microscopio.
+Subí una o más selecciones de fotos (cada una con su nombre y objetivo), medí
+los gusanos automáticamente (área y longitud en µm), corregí a mano lo que
+haga falta, y armá grupos de selecciones para promediar entre sí. Todo se
+exporta a un único Excel.
 """
 import streamlit as st
 import pandas as pd
@@ -16,11 +16,24 @@ import tempfile
 import zipfile
 from PIL import Image
 
-from measure_worms import measure_worms, medir_desde_contorno, dibujar_overlay
+from measure_worms import measure_worms, medir_desde_contorno, dibujar_overlay, OBJETIVOS_CALIBRADOS, OBJETIVO_POR_DEFECTO
 from reporte_excel import generar_excel
 from pen_editor import pen_editor
 
-st.set_page_config(page_title="Medición de gusanos", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="C. elegans Lab", page_icon="🪱", layout="wide")
+
+CSS = """
+<style>
+  h1, h2, h3 { color: #2B1B44; }
+  [data-testid="stMetricValue"] { color: #5E2CA5; }
+  div[data-testid="stExpander"] details summary p { color: #5E2CA5; }
+  .stButton > button[kind="primary"] { background-color: #7C4FE0; border-color: #7C4FE0; }
+  .stButton > button[kind="primary"]:hover { background-color: #6636C8; border-color: #6636C8; }
+  .stDownloadButton > button[kind="primary"] { background-color: #7C4FE0; border-color: #7C4FE0; }
+  .stDownloadButton > button[kind="primary"]:hover { background-color: #6636C8; border-color: #6636C8; }
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
 
 
 def _imagen_a_data_uri(image):
@@ -32,6 +45,7 @@ def _imagen_a_data_uri(image):
 
 EXTENSIONES_VALIDAS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff"]
 COLUMNAS_TABLA = ["archivo", "id", "area_um2", "length_um", "revisar_manualmente", "motivo"]
+OPCIONES_OBJETIVO = list(OBJETIVOS_CALIBRADOS.keys())
 
 if "seleccion_ids" not in st.session_state:
     st.session_state.seleccion_ids = [0]
@@ -79,18 +93,26 @@ def zip_de_carpeta(carpeta, prefijo="anotada_"):
     return buffer
 
 
-st.title("🔬 Medición automática de gusanos")
-st.caption("Detecta cada gusano en las fotos, mide área y longitud en µm, y exporta todo a Excel.")
+st.title("🪱 C. elegans Lab")
+st.caption("Subí tus fotos de microscopio, medimos cada gusano automáticamente (área y longitud en µm) y te dejamos todo listo para descargar en Excel.")
 
-st.subheader("1. Selecciones de fotos")
-st.caption("Cada selección es un grupo de fotos con su propio nombre (por ejemplo, una placa o una condición). Podés agregar varias.")
+st.subheader("1. Fotos a analizar")
+st.caption("Cada selección es un grupo de fotos con su propio nombre — por ejemplo, una placa o una condición del experimento. Podés cargar más de una.")
 
 for sid in list(st.session_state.seleccion_ids):
     with st.container(border=True):
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns([3, 1.3, 1])
         with col1:
             st.text_input("Nombre de la selección", value=f"Selección {sid + 1}", key=f"nombre_{sid}")
         with col2:
+            st.selectbox(
+                "Objetivo (zoom)",
+                OPCIONES_OBJETIVO,
+                index=OPCIONES_OBJETIVO.index(OBJETIVO_POR_DEFECTO),
+                key=f"objetivo_{sid}",
+                help="Con qué zoom digital de Motic se sacaron estas fotos. Define cuántos µm equivale cada píxel.",
+            )
+        with col3:
             st.write("")
             if len(st.session_state.seleccion_ids) > 1:
                 if st.button("🗑 Eliminar", key=f"quitar_sel_{sid}"):
@@ -108,8 +130,8 @@ if st.button("➕ Agregar otra selección"):
     st.session_state.siguiente_seleccion_id += 1
     st.rerun()
 
-st.subheader("2. Grupos a promediar (opcional)")
-st.caption("Si dos o más selecciones se tienen que promediar entre sí (ej: réplicas de la misma condición), armá un grupo acá. El promedio del grupo es el promedio de los promedios de cada selección incluida.")
+st.subheader("2. Promediar entre selecciones (opcional)")
+st.caption("¿Dos o más selecciones son réplicas de la misma condición y hay que promediarlas entre sí? Armalo acá. El promedio del grupo es el promedio de los promedios de cada selección incluida.")
 
 nombres_actuales = {sid: st.session_state.get(f"nombre_{sid}", f"Selección {sid + 1}") for sid in st.session_state.seleccion_ids}
 
@@ -136,19 +158,21 @@ if st.button("➕ Agregar grupo a promediar"):
     st.rerun()
 
 hay_fotos = any(st.session_state.get(f"archivos_{sid}") for sid in st.session_state.seleccion_ids)
-procesar = st.button("▶️ Procesar todo", type="primary", disabled=not hay_fotos)
+procesar = st.button("▶️ Analizar fotos", type="primary", disabled=not hay_fotos)
 
 if procesar:
-    carpeta_entrada_raiz = tempfile.mkdtemp(prefix="gusanos_entrada_")
-    carpeta_salida_raiz = tempfile.mkdtemp(prefix="gusanos_resultados_")
+    carpeta_entrada_raiz = tempfile.mkdtemp(prefix="celab_entrada_")
+    carpeta_salida_raiz = tempfile.mkdtemp(prefix="celab_resultados_")
 
     selecciones_resultado = {}
     errores_totales = []
     total_fotos = 0
 
-    with st.spinner("Procesando fotos..."):
+    with st.spinner("Analizando fotos, puede tardar un momento..."):
         for sid in st.session_state.seleccion_ids:
             nombre_sel = st.session_state.get(f"nombre_{sid}", f"Selección {sid + 1}")
+            objetivo_sel = st.session_state.get(f"objetivo_{sid}", OBJETIVO_POR_DEFECTO)
+            px_per_mm_sel = OBJETIVOS_CALIBRADOS[objetivo_sel]
             archivos = st.session_state.get(f"archivos_{sid}") or []
             if not archivos:
                 continue
@@ -167,7 +191,7 @@ if procesar:
 
                 salida_img = os.path.join(carpeta_salida, f"anotada_{nombre_archivo}")
                 try:
-                    res = measure_worms(ruta_entrada, salida_img)
+                    res = measure_worms(ruta_entrada, salida_img, px_per_mm=px_per_mm_sel)
                     if not res:
                         filas.append({"archivo": nombre_archivo, "id": None, "area_um2": None,
                                        "length_um": None, "revisar_manualmente": True,
@@ -180,6 +204,8 @@ if procesar:
 
             selecciones_resultado[sid] = {
                 "nombre": nombre_sel,
+                "objetivo": objetivo_sel,
+                "px_per_mm": px_per_mm_sel,
                 "filas": filas,
                 "carpeta_entrada": carpeta_entrada,
                 "carpeta_salida": carpeta_salida,
@@ -194,7 +220,7 @@ if procesar:
 resultado = st.session_state.resultado
 if resultado is not None:
     st.divider()
-    st.success(f"Listo — {resultado['total_fotos']} fotos procesadas en {len(resultado['selecciones'])} selección(es).")
+    st.success(f"✔ Listo — {resultado['total_fotos']} fotos analizadas en {len(resultado['selecciones'])} selección(es).")
 
     if resultado["errores"]:
         with st.expander(f"⚠️ {len(resultado['errores'])} fotos con error al procesar"):
@@ -212,13 +238,13 @@ if resultado is not None:
     selecciones_para_excel = []
     for sel in resultado["selecciones"].values():
         area, length, n = calcular_promedio(sel["filas"])
-        selecciones_para_excel.append({"nombre": sel["nombre"], "filas": sel["filas"],
+        selecciones_para_excel.append({"nombre": sel["nombre"], "objetivo": sel.get("objetivo"), "filas": sel["filas"],
                                         "promedio_area": area, "promedio_length": length, "n": n})
 
-    excel_buffer_path = os.path.join(tempfile.gettempdir(), "mediciones_gusanos_actual.xlsx")
+    excel_buffer_path = os.path.join(tempfile.gettempdir(), "celegans_lab_mediciones.xlsx")
     generar_excel(selecciones_para_excel, grupos_actuales, excel_buffer_path)
     with open(excel_buffer_path, "rb") as f:
-        st.download_button("⬇️ Descargar Excel", f, file_name="mediciones_gusanos.xlsx",
+        st.download_button("⬇️ Descargar Excel con todos los resultados", f, file_name="mediciones_c_elegans.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             type="primary")
 
@@ -234,9 +260,10 @@ if resultado is not None:
     for sid, sel in resultado["selecciones"].items():
         st.divider()
         st.subheader(sel["nombre"])
+        st.caption(f"Objetivo: {sel.get('objetivo', OBJETIVO_POR_DEFECTO)}")
 
         df_visible = pd.DataFrame(sel["filas"])[COLUMNAS_TABLA] if sel["filas"] else pd.DataFrame(columns=COLUMNAS_TABLA)
-        st.caption("Podés editar área, longitud y destildar \"revisar_manualmente\" una vez que lo chequeaste a mano.")
+        st.caption("Podés editar el área, la longitud, y destildar \"revisar_manualmente\" una vez que lo chequeaste a mano en Motic.")
         editado = st.data_editor(
             df_visible,
             key=f"editor_{sid}",
@@ -286,7 +313,7 @@ if resultado is not None:
 
         zip_buffer = zip_de_carpeta(sel["carpeta_salida"])
         st.download_button(
-            f"⬇️ Descargar todas las fotos analizadas de \"{sel['nombre']}\" (ZIP)",
+            f"⬇️ Descargar fotos analizadas de \"{sel['nombre']}\" (ZIP)",
             zip_buffer,
             file_name=f"fotos_analizadas_{sel['nombre']}.zip",
             mime="application/zip",
@@ -295,7 +322,7 @@ if resultado is not None:
 
     st.divider()
     st.subheader("3. Corregir una detección")
-    st.caption("Elegí un gusano y arrastrá los puntos de su contorno para corregirlo. Al aplicar, se recalculan área y longitud, y se destilda \"revisar_manualmente\".")
+    st.caption("Elegí un gusano y ajustá su contorno a mano. Al aplicar la corrección se recalculan el área y la longitud, y se destilda \"revisar manualmente\".")
 
     sids_con_datos = [sid for sid, sel in resultado["selecciones"].items() if any(f.get("contorno") for f in sel["filas"])]
     if not sids_con_datos:
@@ -311,16 +338,17 @@ if resultado is not None:
         idx_corr = st.selectbox(
             "Gusano",
             [i for i, _ in filas_de_foto],
-            format_func=lambda i: f"#{sel_corr['filas'][i]['id']} (L={sel_corr['filas'][i]['length_um']}um, área={sel_corr['filas'][i]['area_um2']}um²)",
+            format_func=lambda i: f"#{sel_corr['filas'][i]['id']} (largo={sel_corr['filas'][i]['length_um']}µm, área={sel_corr['filas'][i]['area_um2']}µm²)",
             key="corr_idx",
         )
 
         fila_corr = sel_corr["filas"][idx_corr]
+        px_per_mm_corr = sel_corr.get("px_per_mm") or OBJETIVOS_CALIBRADOS[OBJETIVO_POR_DEFECTO]
         ruta_original = os.path.join(sel_corr["carpeta_entrada"], archivo_corr)
         img_original = cv2.imread(ruta_original)
         img_h, img_w = img_original.shape[:2]
 
-        st.caption("¿Esta detección son en realidad 2 gusanos pegados/cruzados? Separala en 2 y después ajustá cada contorno por separado.")
+        st.caption("¿Esta detección son en realidad 2 gusanos pegados o cruzados? Separala en 2 y después ajustá cada contorno por separado.")
         if st.button("✂️ Separar en 2 gusanos", key=f"separar_{sid_corr}_{archivo_corr}_{idx_corr}"):
             ids_existentes = [f["id"] for f in sel_corr["filas"] if f.get("id") is not None]
             siguiente_id = (max(ids_existentes) + 1) if ids_existentes else 0
@@ -372,8 +400,8 @@ if resultado is not None:
         crop = cv2.cvtColor(img_original[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)
         crop_h, crop_w = crop.shape[:2]
 
-        objetivo = 560
-        escala = min(3.5, max(1.0, objetivo / max(crop_w, crop_h)))
+        objetivo_px = 560
+        escala = min(3.5, max(1.0, objetivo_px / max(crop_w, crop_h)))
         canvas_w, canvas_h = int(crop_w * escala), int(crop_h * escala)
 
         crop_img = Image.fromarray(crop).resize((canvas_w, canvas_h))
@@ -416,7 +444,7 @@ if resultado is not None:
                     }
                     for p in puntos_editados
                 ]
-                medicion = medir_desde_contorno(nuevo_control, img_original.shape)
+                medicion = medir_desde_contorno(nuevo_control, img_original.shape, px_per_mm_corr)
                 fila_corr["area_um2"] = medicion["area_um2"]
                 fila_corr["length_um"] = medicion["length_um"]
                 fila_corr["contorno"] = medicion["contorno_dibujo"]
@@ -434,4 +462,4 @@ if resultado is not None:
                 st.success("Corrección aplicada.")
                 st.rerun()
 else:
-    st.info("Subí las fotos en al menos una selección y apretá \"Procesar todo\" para empezar.")
+    st.info("Subí las fotos en al menos una selección y apretá \"Analizar fotos\" para empezar.")

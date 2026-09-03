@@ -7,6 +7,7 @@ datas = [
     ("reporte_excel.py", "."),
     ("pen_editor.py", "."),
     ("pen_editor/index.html", "pen_editor"),
+    (".streamlit/config.toml", ".streamlit"),
 ]
 binaries = []
 hiddenimports = []
@@ -43,7 +44,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="MedicionGusanos",
+    name="CElegansLab",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -58,5 +59,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name="MedicionGusanos",
+    name="CElegansLab",
 )

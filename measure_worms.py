@@ -1,14 +1,25 @@
 """
-Detección y medición automática de gusanos (nematodos) en fotos de microscopio.
-Calibración: 393.0 px = 1 mm (objetivo 4X, confirmada con el asistente de calibración de Motic).
+Detección y medición automática de nematodos (C. elegans) en fotos de microscopio.
 """
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
 import networkx as nx
 
-PX_PER_MM = 393.0  # calibración 4X (del asistente de calibración de Motic: 2.544529 µm/px)
-PX_PER_UM = PX_PER_MM / 1000  # píxeles por micrómetro
+# Calibración medida a mano con la regla de calibración Motic (círculo de
+# Ø1.5mm, borde detectado a nivel sub-píxel) para cada nivel de zoom digital
+# del software de la cámara. La relación es lineal (zoom digital = multiplicador
+# de software), con un ajuste por mínimos cuadrados de px = 96.07 * zoom y un
+# error residual menor al 1.1% en los 6 puntos medidos.
+OBJETIVOS_CALIBRADOS = {
+    "0.75x": 72.1,
+    "1x": 96.1,
+    "2x": 192.1,
+    "3x": 288.2,
+    "4x": 384.3,
+    "5x": 480.3,
+}
+OBJETIVO_POR_DEFECTO = "4x"
 
 KERNEL_SUAVE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
@@ -127,13 +138,16 @@ def _aplanar_trazado(puntos, muestras_por_tramo=14):
     return fino
 
 
-def medir_desde_contorno(puntos, img_shape):
+def medir_desde_contorno(puntos, img_shape, px_per_mm):
     """
     Recalcula área y longitud a partir de un contorno editado a mano.
-    puntos: lista de dicts {x, y, curved, hx, hy} (ver _aplanar_trazado). Se
-    usa desde el corrector de imagen cuando el usuario ajusta el contorno
-    detectado automáticamente, incluyendo tramos curvados por punto.
+    puntos: lista de dicts {x, y, curved, hx, hy} (ver _aplanar_trazado).
+    px_per_mm: calibración de la foto original (mismo objetivo/zoom con el
+    que se detectó el gusano). Se usa desde el corrector de imagen cuando el
+    usuario ajusta el contorno detectado automáticamente, incluyendo tramos
+    curvados por punto.
     """
+    px_per_um = px_per_mm / 1000
     fino = _aplanar_trazado(puntos)
     mask = np.zeros(img_shape[:2], dtype=np.uint8)
     pts = np.array([fino], dtype=np.int32)
@@ -143,8 +157,8 @@ def medir_desde_contorno(puntos, img_shape):
     area_px = int((mask > 0).sum())
     length_px, skel_points, junctions = _esqueletizar(mask)
 
-    area_um2 = area_px / (PX_PER_UM ** 2)
-    length_um = length_px / PX_PER_UM
+    area_um2 = area_px / (px_per_um ** 2)
+    length_um = length_px / px_per_um
     return {
         "area_um2": round(area_um2, 1),
         "length_um": round(length_um, 1),
@@ -184,7 +198,10 @@ def dibujar_overlay(image_path, out_path, gusanos):
     cv2.imwrite(out_path, overlay)
 
 
-def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_solidity=0.65):
+def measure_worms(image_path, out_path, px_per_mm=None, min_area_px=800, max_area_px=60000, max_solidity=0.65):
+    px_per_mm = px_per_mm or OBJETIVOS_CALIBRADOS[OBJETIVO_POR_DEFECTO]
+    px_per_um = px_per_mm / 1000
+
     img = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -237,8 +254,8 @@ def measure_worms(image_path, out_path, min_area_px=800, max_area_px=60000, max_
         length_px, skel_points, junctions = _esqueletizar(mask)
         posible_cruce = len(junctions) > 0
 
-        area_um2 = area_px / (PX_PER_UM ** 2)
-        length_um = length_px / PX_PER_UM
+        area_um2 = area_px / (px_per_um ** 2)
+        length_um = length_px / px_per_um
 
         # Marca si el contorno toca el borde de la imagen: el gusano puede estar
         # cortado y la medición no sería confiable -> se debe revisar a mano.

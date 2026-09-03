@@ -24,7 +24,7 @@ if __name__ == "__main__":
     app_path = os.path.join(base_path, "app.py")
 
     print("=" * 60)
-    print("  MEDICIÓN DE GUSANOS")
+    print("  C. ELEGANS LAB")
     print("=" * 60)
     print()
     print("  Iniciando el programa, puede tardar unos segundos...")
@@ -44,6 +44,23 @@ if __name__ == "__main__":
     if not os.path.exists(credentials_path):
         with open(credentials_path, "w") as f:
             f.write('[general]\nemail = ""\n')
+
+    # El exe empaquetado corre con el directorio de trabajo del .exe, no el de
+    # _internal donde queda copiado .streamlit/config.toml — así que el tema
+    # (paleta violeta) no se aplicaría solo con ese archivo. Lo escribimos
+    # también en la config global del usuario, que Streamlit siempre lee.
+    config_path = os.path.join(streamlit_config_dir, "config.toml")
+    if not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            f.write(
+                '[theme]\n'
+                'base = "light"\n'
+                'primaryColor = "#7C4FE0"\n'
+                'backgroundColor = "#FBF9FD"\n'
+                'secondaryBackgroundColor = "#EEE6F9"\n'
+                'textColor = "#2B1B44"\n'
+                'font = "sans serif"\n'
+            )
 
     threading.Thread(target=abrir_navegador, daemon=True).start()
 

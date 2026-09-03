@@ -1,44 +1,55 @@
-# Medición automática de gusanos
+# C. elegans Lab
 
-App que detecta gusanos en fotos de microscopio (objetivo 4X), mide área y
-longitud en µm, y exporta todo a Excel. Corre 100% local — las fotos nunca
-salen de la PC.
+App que detecta gusanos (*Caenorhabditis elegans*) en fotos de microscopio,
+mide área y longitud en µm, permite corregir a mano lo que haga falta, y
+exporta todo a un Excel prolijo. Corre 100% local (o en Streamlit Cloud) —
+las fotos nunca salen de donde se procesan.
 
-## Calibración actual
+## Calibración por objetivo
 
-`393.0 px = 1mm` (2.544529 µm/píxel), confirmada con el asistente de
-calibración de Motic. Está en `measure_worms.py`, línea `PX_PER_MM`.
-Si en algún momento cambian de cámara/resolución/objetivo, hay que
-recalibrar y actualizar ese valor (avisame y te paso el script actualizado).
+Cada selección de fotos elige su objetivo (zoom digital de Motic) en un
+desplegable. Los valores están calibrados a mano con la regla de calibración
+Motic (círculo de Ø1.5mm, borde medido a nivel sub-píxel) y viven en
+`measure_worms.py`, diccionario `OBJETIVOS_CALIBRADOS`:
+
+| Objetivo | px / mm |
+|----------|---------|
+| 0.75x    | 72.1    |
+| 1x       | 96.1    |
+| 2x       | 192.1   |
+| 3x       | 288.2   |
+| 4x       | 384.3   |
+| 5x       | 480.3   |
+
+La relación es lineal (`px/mm ≈ 96.07 × zoom`, con un error menor al 1.1% en
+los 6 puntos medidos). Si se usa un zoom no listado, hay que calibrarlo con
+la regla y agregarlo al diccionario.
 
 ## Especie y rangos esperados (referencia)
 
-Los gusanos son *Caenorhabditis elegans*. Como referencia para detectar
-mediciones sospechosas (útil si en algún momento el área o la longitud
-dan valores raros):
+Como referencia para detectar mediciones sospechosas:
 
 - Adulto: ~1000-1100 µm de largo, ~65-80 µm de ancho (parte más gruesa)
 - Larva L1: ~250 µm de largo, ~15 µm de ancho
 - Larvas L2-L4: tamaños intermedios entre esos dos
 
-Si una medición se va muy lejos de estos rangos, probablemente sea un
-error de segmentación (ruido detectado como gusano, calibración
-desactualizada, etc.) más que un gusano real de ese tamaño.
+Si una medición se va muy lejos de estos rangos, probablemente sea un error
+de segmentación (ruido detectado como gusano, objetivo mal seleccionado,
+etc.) más que un gusano real de ese tamaño.
 
-## Uso (una vez que tengas el ejecutable)
+## Uso
 
-1. Descomprimí la carpeta `MedicionGusanos` completa (no muevas el .exe
-   solo fuera de la carpeta, necesita los archivos de al lado).
-2. Doble click en `MedicionGusanos.exe` (adentro de esa carpeta).
-3. Se abre una ventana negra (dejala abierta) y el navegador solo, en
-   `http://localhost:8501`.
-4. Click en "Elegir carpeta" y seleccioná la carpeta con las fotos.
-5. Click en "Procesar todas las fotos".
-6. Revisá la tabla y las fotos anotadas (verde = medido ok, rojo = revisar
-   a mano en Motic).
-7. Descargá el Excel, o buscalo directo en la carpeta
-   `resultados_<fecha>` que se crea adentro de la carpeta de fotos.
-8. Para cerrar el programa, cerrá la ventana negra.
+1. **Fotos a analizar**: subí una o más selecciones de fotos, cada una con
+   su nombre y el objetivo con el que se sacaron.
+2. **Promediar entre selecciones** (opcional): si dos o más selecciones son
+   réplicas de la misma condición, armá un grupo para promediarlas.
+3. Click en **"Analizar fotos"**.
+4. Revisá la tabla y las fotos anotadas por selección (verde = medido ok,
+   rojo = revisar a mano). Podés editar los valores directo en la tabla.
+5. **Corregir una detección**: elegí un gusano y ajustá su contorno a mano
+   con el editor tipo "pluma" (agregar/mover/curvar puntos). Si una
+   detección son en realidad 2 gusanos pegados, separala en 2 primero.
+6. Descargá el Excel con todo, o las fotos analizadas de una selección en ZIP.
 
 ## Cómo generar el .exe
 
@@ -47,9 +58,9 @@ desactualizada, etc.) más que un gusano real de ese tamaño.
 1. Subí esta carpeta completa a un repositorio de GitHub.
 2. Andá a la pestaña "Actions" del repo → "Compilar ejecutable Windows" →
    "Run workflow".
-3. Esperá ~3-5 minutos. Al terminar, bajás la carpeta desde el artifact
-   `MedicionGusanos-Windows` (es un .zip que adentro tiene toda la
-   carpeta `MedicionGusanos`, con el .exe y sus archivos de soporte).
+3. Esperá unos minutos. Al terminar, bajás la carpeta desde el artifact
+   `CElegansLab-Windows` (es un .zip que adentro tiene toda la carpeta
+   `CElegansLab`, con el .exe y sus archivos de soporte).
 
 ### Opción B — Compilar en una PC con Windows
 
@@ -58,7 +69,7 @@ pip install -r requirements.txt
 pyinstaller worm_app.spec
 ```
 
-El .exe (junto con su carpeta de soporte) queda en `dist/MedicionGusanos/`.
+El .exe (junto con su carpeta de soporte) queda en `dist/CElegansLab/`.
 
 ## Desarrollo / probar sin compilar
 
@@ -69,9 +80,13 @@ streamlit run app.py
 
 ## Estructura
 
-- `measure_worms.py` — lógica de detección y medición (segmentación,
-  esqueleto, filtros de sombra/ruido/cruces).
+- `measure_worms.py` — detección y medición automática (segmentación,
+  esqueleto, filtros de sombra/ruido/cruces, calibración por objetivo).
 - `app.py` — interfaz Streamlit.
+- `pen_editor.py` / `pen_editor/index.html` — editor de contorno tipo
+  "pluma" (componente propio, sin dependencias externas).
+- `reporte_excel.py` — arma el Excel final con las secciones y colores.
+- `.streamlit/config.toml` — tema visual (paleta violeta).
 - `launcher.py` — punto de entrada del .exe (abre el navegador solo).
 - `worm_app.spec` — configuración de PyInstaller.
 - `.github/workflows/build.yml` — compila el .exe automáticamente en GitHub.

@@ -22,8 +22,9 @@ FONT_BOLD = Font(bold=True)
 
 def generar_excel(selecciones, grupos, path):
     """
-    selecciones: lista de dicts {"nombre", "filas" (lista de dicts con las
-        columnas de COLUMNAS), "promedio_area", "promedio_length", "n"}
+    selecciones: lista de dicts {"nombre", "objetivo" (opcional), "filas"
+        (lista de dicts con las columnas de COLUMNAS), "promedio_area",
+        "promedio_length", "n"}
     grupos: lista de dicts {"nombre", "detalle" (lista de tuplas
         (nombre_seleccion, promedio_area, promedio_length)),
         "promedio_area", "promedio_length"}
@@ -56,7 +57,9 @@ def generar_excel(selecciones, grupos, path):
         fila += 1
 
     for sel in selecciones:
-        escribir_banda(f"Selección: {sel['nombre']}", FILL_SELECCION, FONT_BANDA)
+        objetivo = sel.get("objetivo")
+        texto_banda = f"Selección: {sel['nombre']} (objetivo {objetivo})" if objetivo else f"Selección: {sel['nombre']}"
+        escribir_banda(texto_banda, FILL_SELECCION, FONT_BANDA)
         escribir_headers()
 
         for f in sel["filas"]:
