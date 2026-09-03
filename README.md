@@ -51,6 +51,28 @@ etc.) más que un gusano real de ese tamaño.
    detección son en realidad 2 gusanos pegados, separala en 2 primero.
 6. Descargá el Excel con todo, o las fotos analizadas de una selección en ZIP.
 
+## Actualización automática del .exe
+
+Cada .exe instalado revisa solo, al abrirse, si hay una versión más nueva
+publicada en GitHub Releases (`updater.py`). Si la hay, muestra un aviso
+("¿Querés actualizar ahora?") y, si el usuario acepta, la descarga y
+reemplaza la instalación sola, sin pasos manuales. Requiere que la PC
+tenga internet en ese momento; si no lo tiene, sigue abriendo la app
+normal sin bloquear nada.
+
+Para publicar una versión nueva que dispare ese aviso en todas las PCs:
+
+1. Subí el número en el archivo `VERSION` (ej. `1.0.0` → `1.1.0`) y
+   commiteá ese cambio a `main`.
+2. Etiquetá el commit y subí el tag:
+   ```
+   git tag v1.1.0
+   git push origin v1.1.0
+   ```
+3. Eso dispara el workflow, que compila, arma el `.zip` y publica el
+   Release en GitHub automáticamente. A partir de ahí, cada .exe que se
+   abra en el laboratorio va a ofrecer actualizarse.
+
 ## Cómo generar el .exe
 
 ### Opción A — GitHub Actions (recomendado, no necesitás Windows)
@@ -88,5 +110,7 @@ streamlit run app.py
 - `reporte_excel.py` — arma el Excel final con las secciones y colores.
 - `.streamlit/config.toml` — tema visual (paleta violeta).
 - `launcher.py` — punto de entrada del .exe (abre el navegador solo).
+- `updater.py` — chequea y aplica actualizaciones automáticas del .exe.
+- `VERSION` — versión instalada actual (la compara `updater.py`).
 - `worm_app.spec` — configuración de PyInstaller.
-- `.github/workflows/build.yml` — compila el .exe automáticamente en GitHub.
+- `.github/workflows/build.yml` — compila el .exe y publica releases en GitHub.

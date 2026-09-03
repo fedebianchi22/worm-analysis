@@ -8,6 +8,7 @@ datas = [
     ("pen_editor.py", "."),
     ("pen_editor/index.html", "pen_editor"),
     (".streamlit/config.toml", ".streamlit"),
+    ("VERSION", "."),
 ]
 binaries = []
 hiddenimports = []

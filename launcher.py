@@ -8,6 +8,7 @@ import threading
 import webbrowser
 import time
 from streamlit.web import cli as stcli
+from updater import verificar_actualizacion
 
 
 def abrir_navegador():
@@ -35,6 +36,8 @@ if __name__ == "__main__":
     print("  >>> Para salir del programa, cerrá esta ventana negra <<<")
     print()
     print("=" * 60)
+
+    verificar_actualizacion(base_path)
 
     # Evita que Streamlit se quede esperando el mail de bienvenida
     # (bloquea la terminal en el primer uso si no se hace esto)
