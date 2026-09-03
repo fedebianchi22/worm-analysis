@@ -7,7 +7,12 @@ on:
     tags: ["v*.*.*"]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Sin el ref en el group: un tag nuevo cancela el build de un tag viejo
+  # que todavía esté corriendo, no solo reintentos del mismo tag/rama. Sin
+  # esto, dos tags pusheados con poca diferencia pueden terminar en
+  # cualquier orden y GitHub marca "latest" al que publicó último, no al
+  # de versión más alta.
+  group: ${{ github.workflow }}
   cancel-in-progress: true
 
 permissions:
@@ -46,3 +51,4 @@ jobs:
           files: CElegansLab-Windows.zip
           name: C. elegans Lab ${{ github.ref_name }}
           generate_release_notes: true
+          make_latest: "true"
