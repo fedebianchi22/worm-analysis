@@ -19,6 +19,7 @@ OutputBaseFilename=CElegansLab-Setup
 Compression=lzma2
 SolidCompression=yes
 UninstallDisplayIcon={app}\CElegansLab.exe
+SetupIconFile=assets\icon.ico
 ; Al actualizar (instalar encima de una instalación ya abierta), cierra la
 ; app sola antes de copiar los archivos nuevos y la vuelve a abrir al
 ; terminar -- sin esto, un archivo en uso frena la instalación silenciosa.

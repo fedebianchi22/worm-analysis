@@ -85,10 +85,11 @@ etc.) más que un gusano real de ese tamaño.
 
 ## Actualización automática del programa de escritorio
 
-Es un programa instalado como cualquier otro: `CElegansLab-Setup.exe` abre
-un asistente que deja elegir la carpeta de instalación, crea el acceso
-directo en el Escritorio, y queda en "Agregar o quitar programas" para
-desinstalarlo. No pide permisos de administrador (se instala para el
+Es un programa instalado como cualquier otro: se descarga un `.zip` con el
+instalador adentro (`CElegansLab-Setup.exe`) — descomprimirlo y correrlo
+abre un asistente que deja elegir la carpeta de instalación, crea el
+acceso directo en el Escritorio, y queda en "Agregar o quitar programas"
+para desinstalarlo. No pide permisos de administrador (se instala para el
 usuario actual). No corre en una consola: al abrirse queda un ícono
 violeta en la bandeja del sistema (al lado del reloj), desde el que se
 puede reabrir el navegador o cerrar el programa.
@@ -162,7 +163,8 @@ Y se abre `http://localhost:8501`.
    - El artifact `CElegansLab-Windows` tiene la carpeta suelta (para
      probar sin instalar).
    - Si corriste el workflow desde un tag `v*.*.*`, además se publica un
-     Release con `CElegansLab-Setup.exe`, el instalador de verdad.
+     Release con `CElegansLab-Setup.zip` (adentro tiene
+     `CElegansLab-Setup.exe`, el instalador de verdad).
 
 **Opción B — Compilar en una PC con Windows:**
 

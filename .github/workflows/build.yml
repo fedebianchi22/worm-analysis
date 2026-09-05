@@ -52,11 +52,15 @@ jobs:
           path: installer.iss
           options: /DAppVersion=${{ env.APP_VERSION }}
 
+      - name: Empaquetar el instalador en .zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: Compress-Archive -Path installer_output/CElegansLab-Setup.exe -DestinationPath installer_output/CElegansLab-Setup.zip
+
       - name: Publicar release en GitHub (dispara la actualización automática)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: installer_output/CElegansLab-Setup.exe
+          files: installer_output/CElegansLab-Setup.zip
           name: C. elegans Lab ${{ github.ref_name }}
           generate_release_notes: true
           make_latest: "true"
