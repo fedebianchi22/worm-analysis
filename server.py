@@ -27,7 +27,7 @@ from reporte_excel import generar_excel
 
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 EXTENSIONES_VALIDAS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-URL_DESCARGA_PC = "https://github.com/fedebianchi22/worm-analysis/releases/latest/download/CElegansLab-Windows.zip"
+URL_DESCARGA_PC = "https://github.com/fedebianchi22/worm-analysis/releases/latest/download/CElegansLab-Setup.exe"
 VERSION = open(os.path.join(BASE_DIR, "VERSION")).read().strip() if os.path.exists(os.path.join(BASE_DIR, "VERSION")) else "-"
 
 app = FastAPI(title="C. elegans Lab")

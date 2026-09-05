@@ -9,7 +9,7 @@ datas = [
 binaries = []
 hiddenimports = []
 
-for pkg in ["fastapi", "uvicorn", "starlette", "multipart", "numpy", "scipy", "skimage", "networkx", "cv2"]:
+for pkg in ["fastapi", "uvicorn", "starlette", "multipart", "numpy", "scipy", "skimage", "networkx", "cv2", "pystray", "PIL"]:
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -50,7 +50,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
     icon=None,
 )
 

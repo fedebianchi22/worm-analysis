@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
-import zipfile
 
 REPO = "fedebianchi22/worm-analysis"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -40,8 +39,8 @@ def _a_tupla(version):
 
 def buscar_actualizacion(base_path):
     """
-    Devuelve (version_nueva, url_zip) si en GitHub hay una versión más
-    nueva que la instalada, o None si no hay internet, no hay releases
+    Devuelve (version_nueva, url_instalador) si en GitHub hay una versión
+    más nueva que la instalada, o None si no hay internet, no hay releases
     publicados, o ya está actualizado.
     """
     try:
@@ -60,16 +59,17 @@ def buscar_actualizacion(base_path):
     if _a_tupla(version_remota) <= _a_tupla(_version_local(base_path)):
         return None
 
-    url_zip = None
+    url_instalador = None
     for asset in datos.get("assets", []):
-        if asset.get("name", "").lower().endswith(".zip"):
-            url_zip = asset.get("browser_download_url")
+        nombre = asset.get("name", "").lower()
+        if nombre.endswith(".exe") and "setup" in nombre:
+            url_instalador = asset.get("browser_download_url")
             break
 
-    if not url_zip:
+    if not url_instalador:
         return None
 
-    return version_remota, url_zip
+    return version_remota, url_instalador
 
 
 def mostrar_modal_actualizacion(version_nueva):
@@ -91,38 +91,22 @@ def mostrar_modal_actualizacion(version_nueva):
     return respuesta
 
 
-def descargar_y_aplicar(url_zip, install_dir, exe_path):
+def descargar_y_aplicar(url_instalador, install_dir):
     """
-    Descarga el .zip de la nueva versión y programa el reemplazo de los
-    archivos actuales para cuando este proceso se cierre (Windows no deja
-    sobrescribir un .exe mientras está corriendo). Termina cerrando el
-    programa actual para que el reemplazo se complete.
+    Descarga el instalador de la nueva versión y lo corre en modo
+    silencioso, apuntando a la misma carpeta donde ya está instalado. El
+    instalador (Inno Setup, CloseApplications=force) cierra este programa
+    solo antes de copiar los archivos nuevos y lo vuelve a abrir al
+    terminar — no aparece ninguna ventana en todo el proceso.
     """
     tmp_dir = tempfile.mkdtemp(prefix="celab_update_")
-    zip_path = os.path.join(tmp_dir, "actualizacion.zip")
-    extract_dir = os.path.join(tmp_dir, "extraido")
+    instalador_path = os.path.join(tmp_dir, "CElegansLab-Setup.exe")
+    urllib.request.urlretrieve(url_instalador, instalador_path)
 
-    urllib.request.urlretrieve(url_zip, zip_path)
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(extract_dir)
-
-    # El .zip publicado trae la carpeta CElegansLab/ adentro en vez del
-    # contenido suelto: si hay una única subcarpeta, usamos esa como raíz.
-    contenido = os.listdir(extract_dir)
-    if len(contenido) == 1 and os.path.isdir(os.path.join(extract_dir, contenido[0])):
-        extract_dir = os.path.join(extract_dir, contenido[0])
-
-    bat_path = os.path.join(tmp_dir, "actualizar.bat")
-    with open(bat_path, "w", encoding="utf-8") as f:
-        f.write(
-            "@echo off\n"
-            "timeout /t 2 /nobreak > NUL\n"
-            f'robocopy "{extract_dir}" "{install_dir}" /E /IS /IT\n'
-            f'start "" "{exe_path}"\n'
-            f'rmdir /s /q "{tmp_dir}"\n'
-        )
-
-    subprocess.Popen(["cmd", "/c", bat_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+    subprocess.Popen(
+        [instalador_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + install_dir],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
     os._exit(0)
 
 
@@ -135,10 +119,10 @@ def verificar_actualizacion(base_path):
         resultado = buscar_actualizacion(base_path)
         if resultado is None:
             return
-        version_nueva, url_zip = resultado
+        version_nueva, url_instalador = resultado
         if mostrar_modal_actualizacion(version_nueva):
             install_dir = os.path.dirname(sys.executable)
             print(f"Descargando la actualización {version_nueva}...")
-            descargar_y_aplicar(url_zip, install_dir, sys.executable)
+            descargar_y_aplicar(url_instalador, install_dir)
     except Exception as e:
         print(f"No se pudo comprobar si hay actualizaciones: {e}")

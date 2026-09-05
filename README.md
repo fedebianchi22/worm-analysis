@@ -85,12 +85,21 @@ etc.) más que un gusano real de ese tamaño.
 
 ## Actualización automática del programa de escritorio
 
-Cada instalación revisa sola, al abrirse, si hay una versión más nueva
-publicada en GitHub Releases (`updater.py`). Si la hay, muestra un aviso
-("¿Querés actualizar ahora?") y, si se acepta, la descarga y reemplaza la
-instalación sola, sin pasos manuales. Requiere que la PC tenga internet en
-ese momento; si no lo tiene, sigue abriendo el programa normal sin bloquear
-nada.
+Es un programa instalado como cualquier otro: `CElegansLab-Setup.exe` abre
+un asistente que deja elegir la carpeta de instalación, crea el acceso
+directo en el Escritorio, y queda en "Agregar o quitar programas" para
+desinstalarlo. No pide permisos de administrador (se instala para el
+usuario actual). No corre en una consola: al abrirse queda un ícono
+violeta en la bandeja del sistema (al lado del reloj), desde el que se
+puede reabrir el navegador o cerrar el programa.
+
+Cada apertura revisa sola si hay una versión más nueva publicada en GitHub
+Releases (`updater.py`). Si la hay, muestra un aviso ("¿Querés actualizar
+ahora?") y, si se acepta, descarga el instalador nuevo y lo corre en modo
+silencioso: se cierra, se reinstala encima (misma carpeta) y se vuelve a
+abrir solo, sin que aparezca ninguna ventana en el proceso. Requiere que la
+PC tenga internet en ese momento; si no lo tiene, sigue abriendo el
+programa normal sin bloquear nada.
 
 Para publicar una versión nueva que dispare ese aviso en todas las PCs:
 
@@ -101,9 +110,9 @@ Para publicar una versión nueva que dispare ese aviso en todas las PCs:
    git tag v2.1.0
    git push origin v2.1.0
    ```
-3. Eso dispara el workflow, que compila, arma el `.zip` y publica el
-   Release en GitHub. A partir de ahí, cada instalación que se abra va a
-   ofrecer actualizarse.
+3. Eso dispara el workflow, que compila el ejecutable, arma el instalador
+   (Inno Setup) y publica el Release en GitHub. A partir de ahí, cada
+   instalación que se abra va a ofrecer actualizarse.
 
 ## Para desarrolladores
 
@@ -131,24 +140,29 @@ Y se abre `http://localhost:8501`.
 - `static/pen.js` — editor de contorno tipo "pluma" (agregar/mover/curvar
   puntos con manijas Bezier), sin dependencias externas.
 - `reporte_excel.py` — arma el Excel final con las secciones y colores.
-- `launcher.py` — punto de entrada del ejecutable (levanta el servidor y
-  abre el navegador solo).
+- `launcher.py` — punto de entrada del ejecutable: levanta el servidor,
+  abre el navegador, y queda como ícono en la bandeja del sistema (sin
+  consola).
 - `updater.py` — chequea y aplica actualizaciones automáticas del programa
   de escritorio.
 - `VERSION` — versión instalada actual (la compara `updater.py`).
-- `worm_app.spec` — configuración de PyInstaller.
-- `.github/workflows/build.yml` — compila el ejecutable y publica releases
-  en GitHub.
+- `worm_app.spec` — configuración de PyInstaller (compila el `.exe`).
+- `installer.iss` — configuración de Inno Setup (arma el instalador a
+  partir de lo que compiló PyInstaller).
+- `.github/workflows/build.yml` — compila el ejecutable, arma el
+  instalador y publica releases en GitHub.
 
-### Compilar el ejecutable de Windows
+### Compilar el instalador de Windows
 
 **Opción A — GitHub Actions (recomendado, no necesitás Windows):**
 
 1. Andá a la pestaña "Actions" del repo → "Compilar ejecutable Windows" →
    "Run workflow".
-2. Esperá unos minutos. Al terminar, bajás la carpeta desde el artifact
-   `CElegansLab-Windows` (un .zip que adentro tiene toda la carpeta
-   `CElegansLab`, con el ejecutable y sus archivos de soporte).
+2. Esperá unos minutos. Al terminar:
+   - El artifact `CElegansLab-Windows` tiene la carpeta suelta (para
+     probar sin instalar).
+   - Si corriste el workflow desde un tag `v*.*.*`, además se publica un
+     Release con `CElegansLab-Setup.exe`, el instalador de verdad.
 
 **Opción B — Compilar en una PC con Windows:**
 
@@ -158,7 +172,14 @@ pyinstaller worm_app.spec
 ```
 
 El ejecutable (junto con su carpeta de soporte) queda en
-`dist/CElegansLab/`.
+`dist/CElegansLab/`. Para armar el instalador hace falta también
+[Inno Setup](https://jrsoftware.org/isinfo.php) instalado, y después:
+
+```
+iscc /DAppVersion=2.1.0 installer.iss
+```
+
+El instalador queda en `installer_output/CElegansLab-Setup.exe`.
 
 ### Desplegar la versión web
 
