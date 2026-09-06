@@ -13,10 +13,10 @@
    curva-, sino que la página host las muestra en un panel fijo al costado
    a través de la función onSeleccion que se pasa a iniciar(). */
 window.CelabPen = (function () {
-  const RADIUS = 4.5;        // mitad del lado del cuadrado del ancla (visual)
-  const HIT_RADIUS = 10;     // radio real donde responde el click/arrastre
-  const HANDLE_RADIUS = 3.5; // manija de curva (visual)
-  const HANDLE_HIT_RADIUS = 9;
+  const RADIUS = 4.5;         // mitad del lado del cuadrado del ancla (visual)
+  const HIT_RADIUS = 10;      // radio real donde responde el click/arrastre
+  const HANDLE_RADIUS = 4.5;  // manija de curva (visual)
+  const HANDLE_HIT_RADIUS = 12;
   const ADD_THRESHOLD = 14;
   const CURVE_SAMPLES = 16;
 
@@ -181,12 +181,16 @@ window.CelabPen = (function () {
     e.stopPropagation();
     dragIdx = parseInt(e.target.dataset.idx, 10);
     dragMoved = false;
-    e.target.setPointerCapture(e.pointerId);
+    // Capturar en el <svg> (fijo) y no en el círculo invisible del punto:
+    // ese círculo se destruye y se vuelve a crear en cada redraw() mientras
+    // se arrastra, y si quedaba capturado él el arrastre se trababa (no
+    // llegaba más el pointerup y el punto quedaba pegado al mouse).
+    svg.setPointerCapture(e.pointerId);
   }
   function onHandleDown(e) {
     e.stopPropagation();
     dragHandle = { idx: parseInt(e.target.dataset.idx, 10), side: e.target.dataset.side };
-    e.target.setPointerCapture(e.pointerId);
+    svg.setPointerCapture(e.pointerId);
   }
 
   function onPointerMove(e) {

@@ -93,31 +93,69 @@ def mostrar_modal_actualizacion(version_nueva):
 
 def descargar_y_aplicar(url_zip, install_dir):
     """
-    Descarga el .zip con el instalador de la nueva versión, lo extrae, y
-    corre el instalador en modo silencioso apuntando a la misma carpeta
-    donde ya está instalado. El instalador (Inno Setup,
-    CloseApplications=force) cierra este programa solo antes de copiar
-    los archivos nuevos y lo vuelve a abrir al terminar — no aparece
-    ninguna ventana en todo el proceso.
+    Descarga el .zip con el instalador de la nueva versión (mostrando una
+    ventana con barra de progreso — antes esto pasaba en silencio total y
+    parecía que no hacía nada), lo extrae, y corre el instalador en modo
+    /SILENT (con barra de progreso propia, sin pasos para clickear)
+    apuntando a la misma carpeta donde ya está instalado. El instalador
+    (Inno Setup, CloseApplications=force) cierra este programa solo antes
+    de copiar los archivos nuevos y lo vuelve a abrir al terminar.
     """
-    tmp_dir = tempfile.mkdtemp(prefix="celab_update_")
-    zip_path = os.path.join(tmp_dir, "actualizacion.zip")
-    urllib.request.urlretrieve(url_zip, zip_path)
+    import threading
+    import tkinter as tk
+    from tkinter import ttk
 
-    extract_dir = os.path.join(tmp_dir, "extraido")
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(extract_dir)
+    estado = {"pct": 0, "instalador_path": None, "error": None}
 
-    instalador_path = None
-    for nombre in os.listdir(extract_dir):
-        if nombre.lower().endswith(".exe"):
-            instalador_path = os.path.join(extract_dir, nombre)
-            break
-    if not instalador_path:
-        return
+    def _reporthook(bloque, tam_bloque, tam_total):
+        if tam_total > 0:
+            estado["pct"] = min(100, bloque * tam_bloque * 100 / tam_total)
+
+    def _trabajo():
+        try:
+            tmp_dir = tempfile.mkdtemp(prefix="celab_update_")
+            zip_path = os.path.join(tmp_dir, "actualizacion.zip")
+            urllib.request.urlretrieve(url_zip, zip_path, reporthook=_reporthook)
+
+            extract_dir = os.path.join(tmp_dir, "extraido")
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(extract_dir)
+
+            for nombre in os.listdir(extract_dir):
+                if nombre.lower().endswith(".exe"):
+                    estado["instalador_path"] = os.path.join(extract_dir, nombre)
+                    break
+        except Exception as e:
+            estado["error"] = str(e)
+
+    hilo = threading.Thread(target=_trabajo, daemon=True)
+    hilo.start()
+
+    ventana = tk.Tk()
+    ventana.title("C. elegans Lab")
+    ventana.resizable(False, False)
+    ventana.attributes("-topmost", True)
+    ventana.eval("tk::PlaceWindow . center")
+    tk.Label(ventana, text="Descargando la actualización...\nNo cierres esta ventana.",
+             padx=28, pady=16, justify="center").pack()
+    barra = ttk.Progressbar(ventana, mode="determinate", maximum=100, length=280)
+    barra.pack(padx=28, pady=(0, 20))
+
+    def _revisar():
+        barra["value"] = estado["pct"]
+        if hilo.is_alive():
+            ventana.after(150, _revisar)
+        else:
+            ventana.destroy()
+
+    ventana.after(150, _revisar)
+    ventana.mainloop()
+
+    if estado["error"] or not estado["instalador_path"]:
+        return  # falló la descarga: no bloquea el arranque normal del programa
 
     subprocess.Popen(
-        [instalador_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + install_dir],
+        [estado["instalador_path"], "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + install_dir],
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     os._exit(0)
