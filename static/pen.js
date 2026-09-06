@@ -1,23 +1,42 @@
 /* Editor de contorno tipo "pluma" (Photoshop). Dibuja sobre un <svg>, sin
    dependencias externas. Se inicializa con CelabPen.iniciar(...) y expone
-   CelabPen.puntosActuales() para leer el resultado antes de enviarlo. */
+   CelabPen.puntosActuales() para leer el resultado antes de enviarlo.
+
+   Estilo inspirado en el trazado de Photoshop: línea fina (con un halo
+   oscuro debajo para que se vea igual sobre fondos claros u oscuros) y
+   anclas chicas cuadradas — el área donde se puede hacer click en cada
+   punto es más grande que el cuadradito visual, para que sea fácil de
+   agarrar sin que los puntos se vean grandes y se pisen entre sí.
+
+   Las acciones sobre el punto seleccionado (curvar/eliminar) no se
+   muestran en un menú flotante sobre el punto -eso tapaba las manijas de
+   curva-, sino que la página host las muestra en un panel fijo al costado
+   a través de la función onSeleccion que se pasa a iniciar(). */
 window.CelabPen = (function () {
-  const RADIUS = 7;
-  const HANDLE_RADIUS = 5;
-  const ADD_THRESHOLD = 16;
+  const RADIUS = 4.5;        // mitad del lado del cuadrado del ancla (visual)
+  const HIT_RADIUS = 10;     // radio real donde responde el click/arrastre
+  const HANDLE_RADIUS = 3.5; // manija de curva (visual)
+  const HANDLE_HIT_RADIUS = 9;
+  const ADD_THRESHOLD = 14;
   const CURVE_SAMPLES = 16;
 
-  let svg, outline, pointsGroup, handlesGroup, menu, btnDel, btnCurve;
+  let svg, outline, outlineHalo, pointsGroup, handlesGroup;
+  let onSeleccion = function () {};
   let points = [];
   let width = 400, height = 400;
   let dragIdx = null;
   let dragHandle = null;
   let dragMoved = false;
-  let menuIdx = null;
+  let seleccionIdx = null;
+  let puntosVisibles = true;
+
+  const NS = "http://www.w3.org/2000/svg";
 
   function toLocal(e) {
     const rect = svg.getBoundingClientRect();
-    return [e.clientX - rect.left, e.clientY - rect.top];
+    const escalaX = width / rect.width;
+    const escalaY = height / rect.height;
+    return [(e.clientX - rect.left) * escalaX, (e.clientY - rect.top) * escalaY];
   }
 
   function bezierPoint(p1, p2, t) {
@@ -68,64 +87,95 @@ window.CelabPen = (function () {
     return [(dx / len) * scale, (dy / len) * scale];
   }
 
+  function notificarSeleccion() {
+    if (seleccionIdx === null || seleccionIdx >= points.length) {
+      onSeleccion(null);
+    } else {
+      onSeleccion({ idx: seleccionIdx, curved: !!points[seleccionIdx].curved, total: points.length });
+    }
+  }
+
   function redraw() {
-    outline.setAttribute("d", pathD());
+    const d = pathD();
+    outlineHalo.setAttribute("d", d);
+    outline.setAttribute("d", d);
     while (pointsGroup.firstChild) pointsGroup.removeChild(pointsGroup.firstChild);
     while (handlesGroup.firstChild) handlesGroup.removeChild(handlesGroup.firstChild);
 
-    if (menuIdx !== null && menuIdx < points.length && points[menuIdx].curved) {
-      const p = points[menuIdx];
+    if (!puntosVisibles) return;
+
+    if (seleccionIdx !== null && seleccionIdx < points.length && points[seleccionIdx].curved) {
+      const p = points[seleccionIdx];
       const outX = p.x + p.hx, outY = p.y + p.hy;
       const inX = p.x - p.hx, inY = p.y - p.hy;
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const line = document.createElementNS(NS, "line");
       line.setAttribute("class", "handle-line");
       line.setAttribute("x1", inX); line.setAttribute("y1", inY);
       line.setAttribute("x2", outX); line.setAttribute("y2", outY);
       handlesGroup.appendChild(line);
       [["out", outX, outY], ["in", inX, inY]].forEach(([side, hx, hy]) => {
-        const h = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        h.setAttribute("class", "handle");
+        const hit = document.createElementNS(NS, "circle");
+        hit.setAttribute("cx", hx); hit.setAttribute("cy", hy);
+        hit.setAttribute("r", HANDLE_HIT_RADIUS);
+        hit.setAttribute("fill", "transparent");
+        hit.setAttribute("pointer-events", "all");
+        hit.setAttribute("class", "hit-target");
+        hit.dataset.idx = seleccionIdx;
+        hit.dataset.side = side;
+        hit.addEventListener("pointerdown", onHandleDown);
+        handlesGroup.appendChild(hit);
+
+        const h = document.createElementNS(NS, "circle");
         h.setAttribute("cx", hx); h.setAttribute("cy", hy);
         h.setAttribute("r", HANDLE_RADIUS);
         h.setAttribute("fill", "#3a86ff");
         h.setAttribute("stroke", "#ffffff");
-        h.setAttribute("stroke-width", "1.2");
-        h.dataset.idx = menuIdx;
-        h.dataset.side = side;
-        h.addEventListener("pointerdown", onHandleDown);
+        h.setAttribute("stroke-width", "1");
+        h.setAttribute("pointer-events", "none");
         handlesGroup.appendChild(h);
       });
     }
 
     points.forEach((p, i) => {
-      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      c.setAttribute("class", "pt");
-      c.setAttribute("cx", p.x);
-      c.setAttribute("cy", p.y);
-      c.setAttribute("r", RADIUS);
-      c.setAttribute("fill", p.curved ? "#3a86ff" : "#00c853");
-      c.setAttribute("stroke", "#ffffff");
-      c.setAttribute("stroke-width", "1.5");
-      c.dataset.idx = i;
-      c.addEventListener("pointerdown", onPointDown);
-      pointsGroup.appendChild(c);
+      if (i === seleccionIdx) {
+        const ring = document.createElementNS(NS, "circle");
+        ring.setAttribute("cx", p.x);
+        ring.setAttribute("cy", p.y);
+        ring.setAttribute("r", RADIUS + 4);
+        ring.setAttribute("fill", "none");
+        ring.setAttribute("stroke", "#ffffff");
+        ring.setAttribute("stroke-width", "1.5");
+        ring.setAttribute("stroke-dasharray", "2.5 2");
+        ring.setAttribute("pointer-events", "none");
+        pointsGroup.appendChild(ring);
+      }
+
+      const hit = document.createElementNS(NS, "circle");
+      hit.setAttribute("cx", p.x);
+      hit.setAttribute("cy", p.y);
+      hit.setAttribute("r", HIT_RADIUS);
+      hit.setAttribute("fill", "transparent");
+      hit.setAttribute("pointer-events", "all");
+      hit.setAttribute("class", "hit-target");
+      hit.dataset.idx = i;
+      hit.addEventListener("pointerdown", onPointDown);
+      pointsGroup.appendChild(hit);
+
+      // Ancla cuadrada (como Photoshop), sin capturar eventos propios: el
+      // círculo invisible de arriba ya cubre un área más cómoda de agarrar.
+      const sq = document.createElementNS(NS, "rect");
+      sq.setAttribute("x", p.x - RADIUS);
+      sq.setAttribute("y", p.y - RADIUS);
+      sq.setAttribute("width", RADIUS * 2);
+      sq.setAttribute("height", RADIUS * 2);
+      sq.setAttribute("rx", 1);
+      sq.setAttribute("fill", p.curved ? "#3a86ff" : "#00c853");
+      sq.setAttribute("stroke", "#ffffff");
+      sq.setAttribute("stroke-width", "1");
+      sq.setAttribute("pointer-events", "none");
+      pointsGroup.appendChild(sq);
     });
-
-    if (menuIdx !== null && menuIdx < points.length) positionMenu(menuIdx);
-    else hideMenu();
   }
-
-  function positionMenu(idx) {
-    const p = points[idx];
-    menu.style.left = p.x + "px";
-    menu.style.top = (p.y - RADIUS - 8) + "px";
-    menu.style.display = "flex";
-    btnCurve.classList.toggle("active", !!p.curved);
-    btnCurve.textContent = p.curved ? "Hacer recto" : "Curvar este punto";
-    const disable = points.length <= 3;
-    btnDel.disabled = disable;
-  }
-  function hideMenu() { menuIdx = null; menu.style.display = "none"; }
 
   function onPointDown(e) {
     e.stopPropagation();
@@ -156,15 +206,25 @@ window.CelabPen = (function () {
   }
   function onPointerUp() {
     if (dragIdx !== null) {
-      if (!dragMoved) { menuIdx = dragIdx; redraw(); }
+      if (!dragMoved) {
+        seleccionIdx = dragIdx;
+        notificarSeleccion();
+        redraw();
+      }
       dragIdx = null;
     } else if (dragHandle !== null) {
       dragHandle = null;
     }
   }
   function onClick(e) {
-    if (e.target.classList && (e.target.classList.contains("pt") || e.target.classList.contains("handle"))) return;
-    if (menuIdx !== null) { hideMenu(); redraw(); return; }
+    if (e.target.classList && e.target.classList.contains("hit-target")) return;
+    if (seleccionIdx !== null) {
+      seleccionIdx = null;
+      notificarSeleccion();
+      redraw();
+      return;
+    }
+    if (!puntosVisibles) return;
     const [x, y] = toLocal(e);
     let best = null;
     const n = points.length;
@@ -181,11 +241,10 @@ window.CelabPen = (function () {
   function iniciar(cfg) {
     svg = document.getElementById(cfg.svgId);
     outline = document.getElementById(cfg.outlineId);
+    outlineHalo = document.getElementById(cfg.outlineHaloId);
     pointsGroup = document.getElementById(cfg.pointsId);
     handlesGroup = document.getElementById(cfg.handlesId);
-    menu = document.getElementById(cfg.menuId);
-    btnDel = document.getElementById(cfg.btnDelId);
-    btnCurve = document.getElementById(cfg.btnCurveId);
+    onSeleccion = cfg.onSeleccion || function () {};
     width = cfg.width;
     height = cfg.height;
     points = (cfg.points || []).map((p) => ({ x: p.x, y: p.y, curved: !!p.curved, hx: p.hx || 0, hy: p.hy || 0 }));
@@ -193,29 +252,35 @@ window.CelabPen = (function () {
     svg.addEventListener("pointermove", onPointerMove);
     svg.addEventListener("pointerup", onPointerUp);
     svg.addEventListener("click", onClick);
-    btnDel.addEventListener("click", () => {
-      if (menuIdx === null || points.length <= 3) return;
-      points.splice(menuIdx, 1);
-      hideMenu();
-      redraw();
-    });
-    btnCurve.addEventListener("click", () => {
-      if (menuIdx === null) return;
-      const p = points[menuIdx];
-      p.curved = !p.curved;
-      if (p.curved) { const [hx, hy] = defaultHandleLen(menuIdx); p.hx = hx; p.hy = hy; }
-      else { p.hx = 0; p.hy = 0; }
-      redraw();
-    });
-    document.getElementById(cfg.wrapId).addEventListener("pointerdown", (e) => {
-      if (e.target === svg || e.target.id === cfg.bgId) {
-        if (menuIdx !== null) { hideMenu(); redraw(); }
-      }
-    });
     redraw();
+  }
+
+  function eliminarSeleccionado() {
+    if (seleccionIdx === null || points.length <= 3) return;
+    points.splice(seleccionIdx, 1);
+    seleccionIdx = null;
+    notificarSeleccion();
+    redraw();
+  }
+
+  function alternarCurva() {
+    if (seleccionIdx === null) return;
+    const p = points[seleccionIdx];
+    p.curved = !p.curved;
+    if (p.curved) { const [hx, hy] = defaultHandleLen(seleccionIdx); p.hx = hx; p.hy = hy; }
+    else { p.hx = 0; p.hy = 0; }
+    notificarSeleccion();
+    redraw();
+  }
+
+  function alternarVisibilidadPuntos() {
+    puntosVisibles = !puntosVisibles;
+    if (!puntosVisibles) { seleccionIdx = null; notificarSeleccion(); }
+    redraw();
+    return puntosVisibles;
   }
 
   function puntosActuales() { return points; }
 
-  return { iniciar, puntosActuales };
+  return { iniciar, puntosActuales, eliminarSeleccionado, alternarCurva, alternarVisibilidadPuntos };
 })();

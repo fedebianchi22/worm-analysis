@@ -210,7 +210,25 @@ button.btn { font: inherit; }
 .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 8px; }
 .plate-card { padding: 10px; text-align: center; }
 .plate-card img { width: 100%; border-radius: 8px; display: block; }
+.plate-img { cursor: zoom-in; transition: opacity .1s; }
+.plate-img:hover { opacity: .85; }
 .plate-count { font-size: .74rem; color: var(--text-muted); margin-top: 8px; }
+
+.foto-modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 30px; }
+.foto-modal[hidden] { display: none; }
+.foto-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.6); }
+.foto-modal-content {
+  position: relative; background: var(--surface); border-radius: 12px; padding: 14px;
+  max-width: min(90vw, 1000px); max-height: 90vh; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: var(--shadow);
+}
+.foto-modal-toolbar { display: flex; align-items: center; gap: 10px; }
+.foto-modal-cerrar {
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-muted); font-size: 1.1rem; line-height: 1; cursor: pointer; flex: none;
+}
+.foto-modal-cerrar:hover { color: var(--accent); border-color: var(--accent); }
+.foto-modal-content img { max-width: 100%; max-height: 75vh; border-radius: 8px; object-fit: contain; display: block; }
 
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; }
 table.results { width: 100%; border-collapse: collapse; font-size: .84rem; background: var(--surface); }
@@ -224,13 +242,16 @@ table.results tbody tr:hover { background: var(--surface-2); }
 .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .table-input { width: 90px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font-family: var(--font-mono); font-size: .82rem; }
 .table-input-text { width: 220px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: .8rem; }
+.row-delete-btn { background: transparent; border: none; cursor: pointer; font-size: .95rem; padding: 4px 6px; border-radius: 6px; line-height: 1; }
+.row-delete-btn:hover { background: var(--warn-soft); }
 
 /* Corregir */
 .fix-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; align-items: start; }
 .fix-canvas { padding: 16px; }
 .fix-canvas-frame { border-radius: 10px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); position: relative; }
-.fix-legend { display: flex; gap: 18px; margin-top: 12px; font-size: .76rem; color: var(--text-muted); }
+.fix-legend { display: flex; gap: 18px; margin-top: 12px; font-size: .76rem; color: var(--text-muted); flex-wrap: wrap; }
 .fix-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.handle-line { stroke: #3a86ff; stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 .selector-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
 .selector-row select { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-family: var(--font-body); font-size: .86rem; }
 

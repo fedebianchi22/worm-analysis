@@ -128,6 +128,41 @@ def _svg_escala_referencia(filas):
     return f'<svg viewBox="0 0 800 118" width="100%" height="118" role="img" aria-label="Longitud de cada gusano contra los rangos de referencia por estadio">{svg}</svg>'
 
 
+def _cola_pendientes(resultado):
+    """Lista (sid, archivo, id) de los gusanos marcados para revisar, en
+    orden estable — usa el id del gusano (no la posición en la lista) para
+    no romperse si una separación cambia los índices."""
+    cola = []
+    for sid, sel in resultado["selecciones"].items():
+        for f in sel["filas"]:
+            if f.get("contorno") and f["revisar_manualmente"]:
+                cola.append((sid, f["archivo"], f.get("id")))
+    return cola
+
+
+def _idx_de(resultado, sid_sel, archivo, gusano_id):
+    filas = resultado["selecciones"][sid_sel]["filas"]
+    for i, f in enumerate(filas):
+        if f["archivo"] == archivo and f.get("id") == gusano_id:
+            return i
+    return None
+
+
+def _siguiente_pendiente_url(sesion, resultado, excluir=None):
+    """URL al próximo gusano pendiente (sin contar los salteados en esta
+    ronda de revisión guiada), o a la pantalla de "todo revisado" si no
+    queda ninguno."""
+    saltados = sesion.setdefault("saltados_revision", set())
+    if excluir:
+        saltados.add(excluir)
+    candidatos = [p for p in _cola_pendientes(resultado) if p not in saltados]
+    if candidatos:
+        sid_sel, archivo, gusano_id = candidatos[0]
+        idx = _idx_de(resultado, sid_sel, archivo, gusano_id)
+        return f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}&guiado=1"
+    return "/corregir?completo=1"
+
+
 def zip_de_carpeta_bytes(carpeta, prefijo="anotada_"):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -374,14 +409,11 @@ def pagina_resultados(request: Request):
     return _render(request, sid, "resultados.html", ctx)
 
 
-@app.post("/resultados/{sel_id}/guardar")
-async def guardar_tabla(request: Request, sel_id: int):
-    sid, sesion = _sesion(request)
-    resultado = sesion["resultado"]
-    if resultado is None or sel_id not in resultado["selecciones"]:
-        return _redirigir("/resultados", sid)
-    form = await request.form()
-    filas = resultado["selecciones"][sel_id]["filas"]
+def _aplicar_edicion_tabla(form, filas):
+    """Vuelca al estado los valores editados en la tabla de resultados
+    (mismo formulario para las tres acciones: guardar, eliminar foto y
+    eliminar gusano — así ninguna pierde ediciones que ya se habían
+    tipeado en otras filas antes de apretar el botón)."""
     for i, fila in enumerate(filas):
         area = form.get(f"area_{i}")
         length = form.get(f"length_{i}")
@@ -391,6 +423,55 @@ async def guardar_tabla(request: Request, sel_id: int):
             fila["length_um"] = float(length)
         fila["revisar_manualmente"] = form.get(f"revisar_{i}") == "on"
         fila["motivo"] = form.get(f"motivo_{i}", fila.get("motivo", ""))
+
+
+@app.post("/resultados/{sel_id}/guardar")
+async def guardar_tabla(request: Request, sel_id: int):
+    sid, sesion = _sesion(request)
+    resultado = sesion["resultado"]
+    if resultado is None or sel_id not in resultado["selecciones"]:
+        return _redirigir("/resultados", sid)
+    form = await request.form()
+    _aplicar_edicion_tabla(form, resultado["selecciones"][sel_id]["filas"])
+    return _redirigir("/resultados", sid)
+
+
+def _redibujar_foto(sel, archivo):
+    gusanos_de_la_foto = [f for f in sel["filas"] if f["archivo"] == archivo and f.get("contorno")]
+    ruta_original = os.path.join(sel["carpeta_entrada"], archivo)
+    ruta_salida = os.path.join(sel["carpeta_salida"], f"anotada_{archivo}")
+    if os.path.exists(ruta_original):
+        dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
+
+
+@app.post("/resultados/{sel_id}/fotos/{archivo}/eliminar")
+def eliminar_foto_resultado(request: Request, sel_id: int, archivo: str):
+    """Saca una foto y todos los gusanos que se le habían detectado — para
+    cuando el usuario se equivocó al subirla y quiere sacarla del análisis."""
+    sid, sesion = _sesion(request)
+    resultado = sesion["resultado"]
+    if resultado is not None and sel_id in resultado["selecciones"]:
+        sel = resultado["selecciones"][sel_id]
+        antes = len(sel["filas"])
+        sel["filas"] = [f for f in sel["filas"] if f["archivo"] != archivo]
+        if len(sel["filas"]) != antes:
+            resultado["total_fotos"] = max(0, resultado["total_fotos"] - 1)
+    return _redirigir("/resultados", sid)
+
+
+@app.post("/resultados/{sel_id}/gusano/{archivo}/{gusano_id_str}/eliminar")
+async def eliminar_gusano_resultado(request: Request, sel_id: int, archivo: str, gusano_id_str: str):
+    """Saca de la tabla (y de la foto anotada) un gusano puntual — por
+    ejemplo cuando la detección automática marcó de más en una foto."""
+    sid, sesion = _sesion(request)
+    resultado = sesion["resultado"]
+    if resultado is not None and sel_id in resultado["selecciones"]:
+        sel = resultado["selecciones"][sel_id]
+        form = await request.form()
+        _aplicar_edicion_tabla(form, sel["filas"])
+        gusano_id = None if gusano_id_str == "none" else int(gusano_id_str)
+        sel["filas"] = [f for f in sel["filas"] if not (f["archivo"] == archivo and f.get("id") == gusano_id)]
+        _redibujar_foto(sel, archivo)
     return _redirigir("/resultados", sid)
 
 
@@ -413,7 +494,8 @@ def _imagen_a_data_uri(ruta):
 
 
 @app.get("/corregir")
-def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, idx: int = None):
+def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, idx: int = None,
+                     guiado: int = 0, completo: int = 0, separado: int = 0):
     sid, sesion = _sesion(request)
     resultado = sesion["resultado"]
     if resultado is None:
@@ -423,7 +505,26 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
     if not sids_con_datos:
         return _render(request, sid, "corregir.html", {"etapa": "corregir", "sin_datos": True, **_contexto_sidebar(sesion)})
 
-    if sid_sel is None or sid_sel not in sids_con_datos:
+    # Entrada "limpia" (sin coordenadas explícitas): arranca -o reinicia- la
+    # revisión guiada por los gusanos marcados para revisar, uno por uno.
+    entrada_limpia = sid_sel is None and archivo is None and idx is None and not completo
+    revision_completa = bool(completo)
+
+    if entrada_limpia:
+        sesion["saltados_revision"] = set()
+        pendientes = _cola_pendientes(resultado)
+        if pendientes:
+            sid_sel, archivo, gusano_id = pendientes[0]
+            idx = _idx_de(resultado, sid_sel, archivo, gusano_id)
+            guiado = 1
+        else:
+            revision_completa = True
+            sid_sel = sids_con_datos[0]
+    elif completo:
+        sesion["saltados_revision"] = set()
+        sid_sel = sids_con_datos[0]
+
+    if sid_sel not in sids_con_datos:
         sid_sel = sids_con_datos[0]
     sel = resultado["selecciones"][sid_sel]
     archivos_con_datos = list(dict.fromkeys(f["archivo"] for f in sel["filas"] if f.get("contorno")))
@@ -470,9 +571,17 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
         for p in contorno_inicial
     ]
 
+    pendientes_actuales = _cola_pendientes(resultado)
+    clave_actual = (sid_sel, archivo, fila_corr.get("id"))
+    en_revision_guiada = bool(guiado) and clave_actual in pendientes_actuales
+
     ctx = {
         "etapa": "corregir",
         "sin_datos": False,
+        "recien_separado": bool(separado),
+        "revision_completa": revision_completa and not en_revision_guiada,
+        "en_revision_guiada": en_revision_guiada,
+        "total_pendientes": len(pendientes_actuales),
         "selecciones": resultado["selecciones"], "sids_con_datos": sids_con_datos,
         "sid_sel": sid_sel, "archivo": archivo, "idx": idx,
         "archivos_con_datos": archivos_con_datos, "indices_validos": indices_validos, "filas_de_foto": filas_de_foto,
@@ -514,7 +623,19 @@ def separar_gusano(request: Request, sid_sel: int = Form(...), archivo: str = Fo
     ruta_salida = os.path.join(sel["carpeta_salida"], f"anotada_{archivo}")
     dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
 
-    return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}", sid)
+    return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}&separado=1", sid)
+
+
+@app.post("/corregir/omitir")
+def omitir_correccion(request: Request, sid_sel: int = Form(...), archivo: str = Form(...), idx: int = Form(...)):
+    """Revisión guiada: dejar este gusano para más adelante y pasar al
+    próximo pendiente, sin aplicar ningún cambio."""
+    sid, sesion = _sesion(request)
+    resultado = sesion["resultado"]
+    fila = resultado["selecciones"][sid_sel]["filas"][idx]
+    clave = (sid_sel, archivo, fila.get("id"))
+    destino = _siguiente_pendiente_url(sesion, resultado, excluir=clave)
+    return _redirigir(destino, sid)
 
 
 @app.post("/corregir/aplicar")
@@ -524,6 +645,7 @@ async def aplicar_correccion(request: Request):
     sid_sel = int(form["sid_sel"])
     archivo = form["archivo"]
     idx = int(form["idx"])
+    guiado = form.get("guiado") == "1"
     import json
     puntos_editados = json.loads(form["puntos"])
 
@@ -557,6 +679,10 @@ async def aplicar_correccion(request: Request):
         gusanos_de_la_foto = [f for f in sel["filas"] if f["archivo"] == archivo and f.get("contorno")]
         ruta_salida = os.path.join(sel["carpeta_salida"], f"anotada_{archivo}")
         dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
+
+        if guiado:
+            destino = _siguiente_pendiente_url(sesion, resultado)
+            return _redirigir(destino, sid)
 
     return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}", sid)
 
