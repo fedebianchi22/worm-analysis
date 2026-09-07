@@ -6,6 +6,7 @@ Toda la lógica de detección/medición vive en measure_worms.py, sin cambios.
 import copy
 import io
 import os
+import re
 import sys
 import zipfile
 
@@ -357,26 +358,16 @@ def analizar(request: Request):
 
 # ================= Etapa 2: resultados =================
 
-@app.get("/resultados")
-def pagina_resultados(request: Request):
-    sid, sesion = _sesion(request)
-    resultado = sesion["resultado"]
-    if resultado is None:
-        return _redirigir("/cargar", sid)
-
-    grupos_actuales = []
-    for gid, grupo in sesion["grupos"].items():
-        detalle, area_grupo, length_grupo = calcular_promedio_grupo(grupo["sids"], resultado["selecciones"])
-        grupos_actuales.append({"nombre": grupo["nombre"], "detalle": detalle,
-                                 "promedio_area": area_grupo, "promedio_length": length_grupo})
-
+def _construir_secciones(resultado):
+    """Arma la lista de secciones (una por selección) con todo lo que hace
+    falta para mostrar el tablero: tiles, escala de referencia, galería de
+    fotos y filas de la tabla. La usan tanto Resultados como la revisión
+    final de Exportar, así las dos pantallas siempre muestran lo mismo."""
     secciones = []
-    total_revisar_global = 0
     for sel_id, sel in resultado["selecciones"].items():
         area, length, n = calcular_promedio(sel["filas"])
         total = len(sel["filas"])
         revisar = sum(1 for f in sel["filas"] if f["revisar_manualmente"])
-        total_revisar_global += revisar
 
         archivos_unicos = list(dict.fromkeys(f["archivo"] for f in sel["filas"]))
         fotos = []
@@ -395,6 +386,24 @@ def pagina_resultados(request: Request):
             "fotos": fotos,
             "filas": list(enumerate(sel["filas"])),
         })
+    return secciones
+
+
+@app.get("/resultados")
+def pagina_resultados(request: Request):
+    sid, sesion = _sesion(request)
+    resultado = sesion["resultado"]
+    if resultado is None:
+        return _redirigir("/cargar", sid)
+
+    grupos_actuales = []
+    for gid, grupo in sesion["grupos"].items():
+        detalle, area_grupo, length_grupo = calcular_promedio_grupo(grupo["sids"], resultado["selecciones"])
+        grupos_actuales.append({"nombre": grupo["nombre"], "detalle": detalle,
+                                 "promedio_area": area_grupo, "promedio_length": length_grupo})
+
+    secciones = _construir_secciones(resultado)
+    total_revisar_global = sum(s["revisar"] for s in secciones)
 
     ctx = {
         "etapa": "resultados",
@@ -686,6 +695,19 @@ async def aplicar_correccion(request: Request):
     return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}", sid)
 
 
+def _nombre_archivo_seguro(nombre, extension):
+    """Limpia el nombre que haya escrito el usuario para el archivo a
+    descargar: sin caracteres inválidos en Windows, y con la extensión
+    correcta puesta (la escriba o no)."""
+    nombre = (nombre or "").strip()
+    if not nombre:
+        nombre = "mediciones_c_elegans"
+    nombre = re.sub(r'[<>:"/\\|?*]', "_", nombre)
+    if not nombre.lower().endswith(extension):
+        nombre += extension
+    return nombre
+
+
 # ================= Etapa 4: exportar =================
 
 @app.get("/exportar")
@@ -701,16 +723,18 @@ def pagina_exportar(request: Request):
     ctx = {
         "etapa": "exportar",
         "resultado": resultado,
+        "secciones": _construir_secciones(resultado),
         "total_fotos": resultado["total_fotos"],
         "total_gusanos": total_gusanos,
         "total_revisar": total_revisar,
+        "num": _num_ar,
         **_contexto_sidebar(sesion),
     }
     return _render(request, sid, "exportar.html", ctx)
 
 
 @app.get("/exportar/excel")
-def exportar_excel(request: Request):
+def exportar_excel(request: Request, nombre: str = "mediciones_c_elegans"):
     _, sesion = _sesion(request)
     resultado = sesion["resultado"]
 
@@ -726,9 +750,10 @@ def exportar_excel(request: Request):
         selecciones_para_excel.append({"nombre": sel["nombre"], "objetivo": sel.get("objetivo"), "filas": sel["filas"],
                                         "promedio_area": area, "promedio_length": length, "n": n})
 
-    ruta = os.path.join(sesion["carpeta"], "mediciones_c_elegans.xlsx")
+    nombre_archivo = _nombre_archivo_seguro(nombre, ".xlsx")
+    ruta = os.path.join(sesion["carpeta"], nombre_archivo)
     generar_excel(selecciones_para_excel, grupos_actuales, ruta)
-    return FileResponse(ruta, filename="mediciones_c_elegans.xlsx",
+    return FileResponse(ruta, filename=nombre_archivo,
                          media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 

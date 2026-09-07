@@ -3,7 +3,7 @@
   <div class="screen-head">
     <div class="eyebrow">Etapa 4 de 4</div>
     <h1 class="screen-title">Exportá tus mediciones</h1>
-    <p class="screen-sub">Bajá el Excel con todas las selecciones y sus promedios, o las fotos anotadas de una selección puntual.</p>
+    <p class="screen-sub">Revisá cómo quedó todo y, si está bien, bajá el Excel con todas las selecciones o las fotos anotadas de una selección puntual.</p>
   </div>
 
   <div class="card export-hero">
@@ -16,13 +16,69 @@
     </div>
   </div>
 
+  {% if total_revisar > 0 %}
+    <div class="alert-warn">⚠️ Todavía quedan <strong>{{ total_revisar }}</strong> gusano(s) marcados para revisar a mano. Podés exportar igual, o volver a <a href="/corregir">Corregir detección</a> antes.</div>
+  {% endif %}
+
+  <h2 class="section-title">Revisión final</h2>
+  <p class="field-hint" style="margin-bottom:14px">Así quedó cada selección después de los ajustes. Si algo no cierra, volvé a "Resultados" o "Corregir detección" — acá es solo para confirmar antes de exportar.</p>
+
+  {% for s in secciones %}
+    <h3 class="subsection-title" style="font-size:1.1rem">{{ s.nombre }}</h3>
+    <div class="context-bar"><strong>{{ s.nombre }}</strong> · objetivo {{ s.objetivo }} · {{ s.n_fotos }} fotos</div>
+
+    <div class="tiles">
+      <div class="tile"><div class="tile-label">Longitud promedio</div><div class="tile-value">{{ num(s.length, 0) }} <span class="tile-unit">µm</span></div></div>
+      <div class="tile"><div class="tile-label">Área promedio</div><div class="tile-value">{{ num(s.area, 0) }} <span class="tile-unit">µm²</span></div></div>
+      <div class="tile ok"><div class="tile-label">Medidos automáticamente</div><div class="tile-value">{{ s.total - s.revisar }} <span class="tile-unit">de {{ s.total }}</span></div></div>
+      <div class="tile {{ 'warn' if s.revisar else '' }}"><div class="tile-label">Para revisar a mano</div><div class="tile-value">{{ s.revisar }} <span class="tile-unit">de {{ s.total }}</span></div></div>
+    </div>
+
+    <div class="gallery">
+      {% for foto in s.fotos %}
+        <div class="card plate-card">
+          <img src="/foto/{{ foto.sel_id }}/{{ foto.archivo }}" alt="{{ foto.archivo }}" loading="lazy"
+               class="plate-img-ver" data-src="/foto/{{ foto.sel_id }}/{{ foto.archivo }}">
+          <div class="plate-count">{{ foto.archivo }} · {{ foto.n }} gusano(s){% if foto.n_revisar %} · {{ foto.n_revisar }} para revisar{% endif %}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="table-wrap" style="margin-bottom:30px">
+      <table class="results">
+        <thead><tr><th>Archivo</th><th>ID</th><th>Estado</th><th>Área (µm²)</th><th>Longitud (µm)</th><th>Motivo</th></tr></thead>
+        <tbody>
+          {% for i, f in s.filas %}
+            <tr>
+              <td>{{ f.archivo }}</td>
+              <td class="num">{{ f.id if f.id is not none else "—" }}</td>
+              <td>
+                {% if f.revisar_manualmente %}<span class="chip chip-warn"><span class="chip-dot"></span>Revisar</span>
+                {% else %}<span class="chip chip-ok"><span class="chip-dot"></span>Automático</span>{% endif %}
+              </td>
+              <td class="num">{{ num(f.area_um2, 1) }}</td>
+              <td class="num">{{ num(f.length_um, 1) }}</td>
+              <td class="row-motivo">{{ f.motivo or "—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
   <h2 class="section-title">Descargas</h2>
   <div class="export-grid">
     <div class="card export-card">
       <h3>Excel con todas las selecciones</h3>
       <p>Cada selección en su sección, con promedios y, si armaste grupos, el promedio entre selecciones.</p>
-      <span class="export-file">mediciones_c_elegans.xlsx</span>
-      <a class="btn btn-primary btn-block" href="/exportar/excel">⬇ Descargar Excel</a>
+      <form method="get" action="/exportar/excel">
+        <label class="field-label">Nombre del archivo</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <input class="field-input" type="text" name="nombre" value="mediciones_c_elegans" style="flex:1">
+          <span class="export-file" style="margin:0">.xlsx</span>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">⬇ Descargar Excel</button>
+      </form>
     </div>
     <div class="card export-card">
       <h3>Fotos anotadas</h3>
@@ -32,4 +88,27 @@
       {% endfor %}
     </div>
   </div>
+
+  <div id="ver-modal" class="foto-modal" hidden>
+    <div class="foto-modal-backdrop" id="ver-modal-backdrop"></div>
+    <div class="foto-modal-content">
+      <div class="foto-modal-toolbar">
+        <button class="foto-modal-cerrar" type="button" id="ver-modal-cerrar" aria-label="Cerrar" style="margin-left:auto">×</button>
+      </div>
+      <img id="ver-modal-img" src="" alt="">
+    </div>
+  </div>
+  <script>
+    (function () {
+      const modal = document.getElementById("ver-modal");
+      const img = document.getElementById("ver-modal-img");
+      function cerrar() { modal.hidden = true; }
+      document.querySelectorAll(".plate-img-ver").forEach((el) => {
+        el.addEventListener("click", () => { img.src = el.getAttribute("src"); modal.hidden = false; });
+      });
+      document.getElementById("ver-modal-backdrop").addEventListener("click", cerrar);
+      document.getElementById("ver-modal-cerrar").addEventListener("click", cerrar);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(); });
+    })();
+  </script>
 {% endblock %}

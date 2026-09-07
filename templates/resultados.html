@@ -99,9 +99,11 @@
   {% endfor %}
 
   <div class="cta-row">
-    <a class="btn btn-primary {{ 'btn-primary' if total_revisar_global else 'btn-secondary' }}" href="/corregir" {{ 'style=pointer-events:none;opacity:.5' if total_revisar_global == 0 else '' }}>
-      Corregir detecciones pendientes ({{ total_revisar_global }}) →
-    </a>
+    {% if total_revisar_global > 0 %}
+      <a class="btn btn-primary" href="/corregir">Corregir detecciones pendientes ({{ total_revisar_global }}) →</a>
+    {% else %}
+      <a class="btn btn-primary" href="/exportar">✔ Nada para revisar — ir a Exportar →</a>
+    {% endif %}
   </div>
 
   <div id="foto-modal" class="foto-modal" hidden>
