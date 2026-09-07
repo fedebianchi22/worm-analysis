@@ -44,20 +44,25 @@ def buscar_actualizacion(base_path):
     nueva que la instalada, o None si no hay internet, no hay releases
     publicados, o ya está actualizado.
     """
+    version_actual = _version_local(base_path)
     try:
         req = urllib.request.Request(
             API_URL, headers={"Accept": "application/vnd.github+json"}
         )
         with urllib.request.urlopen(req, timeout=TIMEOUT_SEG) as resp:
             datos = json.loads(resp.read().decode("utf-8"))
-    except Exception:
+    except Exception as e:
+        print(f"[updater] no se pudo consultar GitHub Releases: {e}")
         return None
 
     version_remota = datos.get("tag_name", "")
+    print(f"[updater] versión instalada (base_path={base_path}): '{version_actual}' -> "
+          f"versión publicada: '{version_remota}'")
     if not version_remota:
         return None
 
-    if _a_tupla(version_remota) <= _a_tupla(_version_local(base_path)):
+    if _a_tupla(version_remota) <= _a_tupla(version_actual):
+        print("[updater] ya está en la última versión, no se ofrece actualizar.")
         return None
 
     url_zip = None
@@ -67,6 +72,7 @@ def buscar_actualizacion(base_path):
             break
 
     if not url_zip:
+        print("[updater] hay una versión nueva pero el release no tiene ningún .zip adjunto.")
         return None
 
     return version_remota, url_zip
@@ -91,15 +97,25 @@ def mostrar_modal_actualizacion(version_nueva):
     return respuesta
 
 
-def descargar_y_aplicar(url_zip, install_dir):
+def _mostrar_error(mensaje):
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    messagebox.showerror("C. elegans Lab", mensaje, parent=root)
+    root.destroy()
+
+
+def descargar_y_aplicar(url_zip, install_dir, exe_path):
     """
-    Descarga el .zip con el instalador de la nueva versión (mostrando una
-    ventana con barra de progreso — antes esto pasaba en silencio total y
-    parecía que no hacía nada), lo extrae, y corre el instalador en modo
-    /SILENT (con barra de progreso propia, sin pasos para clickear)
-    apuntando a la misma carpeta donde ya está instalado. El instalador
-    (Inno Setup, CloseApplications=force) cierra este programa solo antes
-    de copiar los archivos nuevos y lo vuelve a abrir al terminar.
+    Descarga el .zip con el instalador de la nueva versión (con una
+    ventana de progreso real), lo extrae, y programa correrlo en modo
+    /SILENT (con su propia barra de progreso) unos segundos después de
+    que este proceso termine — se lanza desacoplado (un .bat que espera)
+    en vez de arrancarlo y cerrarnos nosotros al toque, para no competir
+    con Inno Setup por soltar el archivo del programa actual.
     """
     import threading
     import tkinter as tk
@@ -125,6 +141,8 @@ def descargar_y_aplicar(url_zip, install_dir):
                 if nombre.lower().endswith(".exe"):
                     estado["instalador_path"] = os.path.join(extract_dir, nombre)
                     break
+            if not estado["instalador_path"]:
+                estado["error"] = "el .zip descargado no tiene ningún instalador (.exe) adentro"
         except Exception as e:
             estado["error"] = str(e)
 
@@ -136,8 +154,9 @@ def descargar_y_aplicar(url_zip, install_dir):
     ventana.resizable(False, False)
     ventana.attributes("-topmost", True)
     ventana.eval("tk::PlaceWindow . center")
-    tk.Label(ventana, text="Descargando la actualización...\nNo cierres esta ventana.",
-             padx=28, pady=16, justify="center").pack()
+    etiqueta = tk.Label(ventana, text="Descargando la actualización...\nNo cierres esta ventana.",
+                         padx=28, pady=16, justify="center")
+    etiqueta.pack()
     barra = ttk.Progressbar(ventana, mode="determinate", maximum=100, length=280)
     barra.pack(padx=28, pady=(0, 20))
 
@@ -146,18 +165,36 @@ def descargar_y_aplicar(url_zip, install_dir):
         if hilo.is_alive():
             ventana.after(150, _revisar)
         else:
-            ventana.destroy()
+            etiqueta.config(text="Preparando la instalación...")
+            ventana.update()
+            ventana.after(400, ventana.destroy)
 
     ventana.after(150, _revisar)
     ventana.mainloop()
 
     if estado["error"] or not estado["instalador_path"]:
-        return  # falló la descarga: no bloquea el arranque normal del programa
+        print(f"[updater] falló la descarga/extracción: {estado['error']}")
+        _mostrar_error(
+            "No se pudo descargar la actualización.\n\n"
+            f"Detalle: {estado['error']}\n\n"
+            "El programa va a seguir funcionando con la versión actual."
+        )
+        return
 
-    subprocess.Popen(
-        [estado["instalador_path"], "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=" + install_dir],
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    # El instalador se lanza desde un .bat que espera un momento a que este
+    # proceso termine de cerrarse del todo (y suelte el .exe) antes de
+    # arrancar Inno Setup — así CloseApplications no tiene que competir con
+    # nuestro propio cierre.
+    tmp_dir = os.path.dirname(estado["instalador_path"])
+    bat_path = os.path.join(tmp_dir, "_actualizar.bat")
+    with open(bat_path, "w", encoding="utf-8") as f:
+        f.write(
+            "@echo off\r\n"
+            "timeout /t 2 /nobreak > NUL\r\n"
+            f'"{estado["instalador_path"]}" /SILENT /SUPPRESSMSGBOXES /NORESTART "/DIR={install_dir}"\r\n'
+        )
+    print(f"[updater] lanzando instalador vía {bat_path} -> {estado['instalador_path']}")
+    subprocess.Popen(["cmd", "/c", bat_path], creationflags=subprocess.CREATE_NO_WINDOW)
     os._exit(0)
 
 
@@ -173,7 +210,7 @@ def verificar_actualizacion(base_path):
         version_nueva, url_zip = resultado
         if mostrar_modal_actualizacion(version_nueva):
             install_dir = os.path.dirname(sys.executable)
-            print(f"Descargando la actualización {version_nueva}...")
-            descargar_y_aplicar(url_zip, install_dir)
+            print(f"[updater] descargando la actualización {version_nueva}...")
+            descargar_y_aplicar(url_zip, install_dir, sys.executable)
     except Exception as e:
-        print(f"No se pudo comprobar si hay actualizaciones: {e}")
+        print(f"[updater] no se pudo comprobar si hay actualizaciones: {e}")

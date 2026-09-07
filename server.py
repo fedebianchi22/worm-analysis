@@ -27,7 +27,6 @@ from reporte_excel import generar_excel
 
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 EXTENSIONES_VALIDAS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-URL_DESCARGA_PC = "https://github.com/fedebianchi22/worm-analysis/releases/latest/download/CElegansLab-Setup.zip"
 VERSION = open(os.path.join(BASE_DIR, "VERSION")).read().strip() if os.path.exists(os.path.join(BASE_DIR, "VERSION")) else "-"
 
 app = FastAPI(title="C. elegans Lab")
@@ -705,7 +704,6 @@ def pagina_exportar(request: Request):
         "total_fotos": resultado["total_fotos"],
         "total_gusanos": total_gusanos,
         "total_revisar": total_revisar,
-        "URL_DESCARGA_PC": URL_DESCARGA_PC,
         **_contexto_sidebar(sesion),
     }
     return _render(request, sid, "exportar.html", ctx)
