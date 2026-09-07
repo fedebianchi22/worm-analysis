@@ -7,10 +7,10 @@ Medición automática de nematodos (*Caenorhabditis elegans*) en fotos de
 microscopio: detecta cada gusano, mide área y longitud en µm, deja corregir
 a mano lo que haga falta, y exporta todo a un Excel prolijo.
 
-Es una aplicación web propia — sin frameworks de terceros para la interfaz —
-pensada para uso en laboratorio: no requiere conocimientos técnicos, corre
-100% local (o en un servidor propio) y las fotos nunca salen de la
-computadora donde se procesan.
+Es un programa de escritorio para Windows — con interfaz propia, sin
+frameworks de terceros — pensado para uso en laboratorio: no requiere
+conocimientos técnicos, corre 100% local, en su propia ventana (no un
+navegador), y las fotos nunca salen de la computadora donde se procesan.
 
 ## Qué hace
 
@@ -32,14 +32,13 @@ computadora donde se procesan.
   para promediar entre sí.
 - **Exporta a Excel** con una sección por selección, promedios, y promedios
   por grupo — listo para pegar en un informe.
-- **Programa de escritorio** (Windows) además de la versión web, con
-  actualización automática: al abrirse, revisa solo si hay una versión
+- **Actualización automática**: al abrirse, revisa sola si hay una versión
   nueva publicada y se actualiza sin pasos manuales.
 
-## Para el laboratorio (uso sin instalar nada)
+## Para el laboratorio
 
-Entrá a la versión web de la app (o instalá el programa de escritorio desde
-ahí — botón "Descargar para PC") y seguí las 4 etapas de la barra lateral:
+Instalá el programa (`CElegansLab-Setup.exe`, ver más abajo) y seguí las
+4 etapas de la barra lateral:
 
 1. **Cargar fotos**: subí una o más selecciones, cada una con su nombre y el
    objetivo del microscopio con el que se sacaron.
@@ -90,9 +89,17 @@ instalador adentro (`CElegansLab-Setup.exe`) — descomprimirlo y correrlo
 abre un asistente que deja elegir la carpeta de instalación, crea el
 acceso directo en el Escritorio, y queda en "Agregar o quitar programas"
 para desinstalarlo. No pide permisos de administrador (se instala para el
-usuario actual). No corre en una consola: al abrirse queda un ícono
-violeta en la bandeja del sistema (al lado del reloj), desde el que se
-puede reabrir el navegador o cerrar el programa.
+usuario actual).
+
+No corre en una consola ni en el navegador: se abre en su propia ventana
+(vía [pywebview](https://pywebview.flowrl.com/), usando el motor WebView2
+de Microsoft, el mismo de Edge). El instalador se asegura de que WebView2
+esté disponible — casi cualquier Windows 10/11 actualizado ya lo tiene de
+fábrica, y si no, el instalador lo agrega solo (bootstrapper oficial de
+Microsoft, corre en silencio como parte de la misma instalación). Si por
+algún motivo no se puede abrir la ventana propia, cae de respaldo a abrir
+el navegador con un ícono en la bandeja del sistema para reabrirlo o
+cerrarlo.
 
 Cada apertura revisa sola si hay una versión más nueva publicada en GitHub
 Releases (`updater.py`). Si la hay, muestra un aviso ("¿Querés actualizar
@@ -141,15 +148,18 @@ Y se abre `http://localhost:8501`.
 - `static/pen.js` — editor de contorno tipo "pluma" (agregar/mover/curvar
   puntos con manijas Bezier), sin dependencias externas.
 - `reporte_excel.py` — arma el Excel final con las secciones y colores.
-- `launcher.py` — punto de entrada del ejecutable: levanta el servidor,
-  abre el navegador, y queda como ícono en la bandeja del sistema (sin
-  consola).
+- `launcher.py` — punto de entrada del ejecutable: levanta el servidor y
+  lo abre en su propia ventana (pywebview); si falla, cae de respaldo al
+  navegador con un ícono en la bandeja del sistema.
 - `updater.py` — chequea y aplica actualizaciones automáticas del programa
   de escritorio.
 - `VERSION` — versión instalada actual (la compara `updater.py`).
+- `assets/icon.ico` / `assets/generar_icono.py` — ícono de la app (y el
+  script que lo genera, por si hay que ajustarlo).
 - `worm_app.spec` — configuración de PyInstaller (compila el `.exe`).
 - `installer.iss` — configuración de Inno Setup (arma el instalador a
-  partir de lo que compiló PyInstaller).
+  partir de lo que compiló PyInstaller, incluyendo el bootstrapper de
+  WebView2).
 - `.github/workflows/build.yml` — compila el ejecutable, arma el
   instalador y publica releases en GitHub.
 
@@ -181,33 +191,24 @@ El ejecutable (junto con su carpeta de soporte) queda en
 iscc /DAppVersion=2.1.0 installer.iss
 ```
 
-El instalador queda en `installer_output/CElegansLab-Setup.exe`.
-
-### Desplegar la versión web
-
-Es un servidor FastAPI estándar (no depende de Streamlit ni de ninguna
-plataforma en particular), así que corre en cualquier host que acepte una
-app Python con `uvicorn` — por ejemplo Render, Fly.io o un VPS propio con
-Docker. El comando de arranque en producción es:
-
-```
-uvicorn server:app --host 0.0.0.0 --port $PORT
-```
+El instalador queda en `installer_output/CElegansLab-Setup.exe`. Si no
+descargaste a mano `vendor/MicrosoftEdgeWebview2Setup.exe` (el workflow de
+GitHub Actions lo hace solo), el instalador se arma igual, nada más que
+sin el paso que instala WebView2 — no hace falta para probarlo en una PC
+que ya lo tenga, que es casi seguro el caso en cualquier Windows moderno.
 
 ## Privacidad
 
-Las fotos y las mediciones se procesan enteramente en la máquina donde
-corre la app (o en el servidor propio, si se despliega uno) y no se envían
-a ningún servicio de terceros.
+Las fotos y las mediciones se procesan enteramente en la computadora donde
+corre la app y no se envían a ningún servicio de terceros.
 
 ## Licencia y uso
 
 Este repositorio no tiene una licencia de código abierto: todos los
 derechos están reservados. El código es público para que se pueda ver,
 pero **no está permitido copiarlo, modificarlo, redistribuirlo ni
-revenderlo sin autorización previa del autor**. Sí está permitido usar la
-aplicación (la versión web o el programa de escritorio) tal como se
-distribuye.
+revenderlo sin autorización previa del autor**. Sí está permitido usar el
+programa tal como se distribuye.
 
 Para pedir autorización de uso o colaborar, abrí un issue en este
 repositorio.

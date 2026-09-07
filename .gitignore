@@ -3,3 +3,5 @@ build/
 dist/
 __pycache__/
 *.pyc
+vendor/
+installer_output/

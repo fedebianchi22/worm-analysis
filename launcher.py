@@ -1,11 +1,11 @@
 """
 Punto de entrada del programa: levanta el servidor de C. elegans Lab en
-localhost, abre el navegador, y queda como un ícono en la bandeja del
-sistema (sin ventana de consola — nada que pueda asustar a alguien que no
-sabe de programación). Desde el ícono se puede reabrir el navegador o
-cerrar el programa.
+localhost y lo abre en su propia ventana (pywebview, sin barra de
+direcciones ni pestañas de navegador — un programa de Windows común, con
+su ícono en la barra de tareas y su botón de cerrar). Si por algún motivo
+la ventana no se puede crear (por ejemplo, WebView2 no disponible), cae de
+respaldo a abrir el navegador y dejar un ícono en la bandeja del sistema.
 """
-import io
 import os
 import sys
 import threading
@@ -39,6 +39,8 @@ def _icono_bandeja():
 
 
 def _iniciar_bandeja():
+    """Respaldo si no se pudo abrir la ventana propia: ícono en la bandeja
+    del sistema con Abrir/Salir, y la app corre en el navegador normal."""
     import pystray
 
     def abrir(icon, item):
@@ -71,6 +73,17 @@ def _iniciar_servidor():
     uvicorn.run(app, host="127.0.0.1", port=8501, log_level="warning")
 
 
+def _esperar_servidor(intentos=40, espera=0.15):
+    import urllib.request
+    for _ in range(intentos):
+        try:
+            urllib.request.urlopen(URL_APP, timeout=0.5)
+            return True
+        except Exception:
+            time.sleep(espera)
+    return False
+
+
 if __name__ == "__main__":
     if getattr(sys, "frozen", False):
         base_path = sys._MEIPASS
@@ -84,11 +97,19 @@ if __name__ == "__main__":
     verificar_actualizacion(base_path)
 
     threading.Thread(target=_iniciar_servidor, daemon=True).start()
-    threading.Thread(target=_abrir_navegador_una_vez, daemon=True).start()
+    _esperar_servidor()
 
-    if getattr(sys, "frozen", False):
-        _iniciar_bandeja()
-    else:
+    if not getattr(sys, "frozen", False):
         # En desarrollo (no empaquetado) es más cómodo dejar la consola
-        # normal corriendo y cortar con Ctrl+C, sin ícono de bandeja.
+        # normal corriendo y abrir el navegador, sin ventana propia.
+        threading.Thread(target=_abrir_navegador_una_vez, daemon=True).start()
         threading.Event().wait()
+    else:
+        try:
+            import webview
+            webview.create_window("C. elegans Lab", URL_APP, width=1300, height=860, min_size=(900, 600))
+            webview.start()
+        except Exception as e:
+            print(f"No se pudo abrir la ventana propia ({e}); usando el navegador como respaldo.")
+            threading.Thread(target=_abrir_navegador_una_vez, daemon=True).start()
+            _iniciar_bandeja()
