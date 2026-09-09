@@ -107,6 +107,10 @@ if __name__ == "__main__":
     else:
         try:
             import webview
+            # Por default pywebview bloquea las descargas (ALLOW_DOWNLOADS
+            # empieza en False) -- sin esto, "Descargar Excel"/"Descargar
+            # fotos" no hacían nada visible, ni un error ni un aviso.
+            webview.settings["ALLOW_DOWNLOADS"] = True
             webview.create_window("C. elegans Lab", URL_APP, width=1300, height=860, min_size=(900, 600))
             webview.start()
         except Exception as e:
