@@ -50,6 +50,13 @@ def _con_cookie(response, sid):
 
 
 def _redirigir(url, sid):
+    # Todas las rutas que cambian algo terminan devolviendo _redirigir(), así
+    # que guardar acá cubre cualquier cambio (subir fotos, analizar, editar
+    # la tabla, corregir, etc.) sin tener que acordarse de hacerlo en cada
+    # una por separado. Si el programa se cierra de golpe, lo último
+    # guardado acá es lo que se recupera al volver a abrirlo.
+    if sid in state.SESSIONS:
+        state.guardar_estado(state.SESSIONS[sid])
     return _con_cookie(RedirectResponse(url=url, status_code=303), sid)
 
 
@@ -195,17 +202,71 @@ def raiz(request: Request):
 # ================= Etapa 1: cargar =================
 
 @app.get("/cargar")
-def pagina_cargar(request: Request):
+def pagina_cargar(request: Request, error_proyecto: int = 0):
     sid, sesion = _sesion(request)
+    hay_fotos = any(d["archivos"] for d in sesion["selecciones"].values())
     ctx = {
         "etapa": "cargar",
         "selecciones": sesion["selecciones"],
         "grupos": sesion["grupos"],
         "nombres_actuales": {s: d["nombre"] for s, d in sesion["selecciones"].items()},
-        "hay_fotos": any(d["archivos"] for d in sesion["selecciones"].values()),
+        "hay_fotos": hay_fotos,
+        "hay_algo_que_vaciar": hay_fotos or sesion["resultado"] is not None,
+        "error_proyecto": bool(error_proyecto),
         **_contexto_sidebar(sesion),
     }
     return _render(request, sid, "cargar.html", ctx)
+
+
+@app.post("/cargar/reiniciar-todo")
+def reiniciar_todo(request: Request):
+    """Vacía todas las fotos y resultados guardados para empezar de cero
+    -acción explícita del usuario, nunca pasa sola- y libera el espacio
+    en disco que ocupaban."""
+    sid, sesion = _sesion(request)
+    state.SESSIONS[sid] = state.reiniciar_sesion()
+    return _redirigir("/cargar", sid)
+
+
+@app.get("/cargar/proyecto/guardar")
+def guardar_proyecto(request: Request):
+    """Empaqueta todo el trabajo actual (fotos, resultados, correcciones)
+    en un único .zip descargable, para guardarlo como backup o pasarlo a
+    otra computadora y retomarlo ahí con 'Abrir un análisis guardado'."""
+    sid, sesion = _sesion(request)
+    state.guardar_estado(sesion)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for raiz, _, archivos in os.walk(state.CARPETA_TRABAJO):
+            for nombre in archivos:
+                ruta = os.path.join(raiz, nombre)
+                zf.write(ruta, arcname=os.path.relpath(ruta, state.CARPETA_TRABAJO))
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/zip",
+                              headers={"Content-Disposition": 'attachment; filename="analisis_c_elegans.zip"'})
+
+
+@app.post("/cargar/proyecto/abrir")
+async def abrir_proyecto(request: Request, archivo: UploadFile = None):
+    """Restaura un análisis guardado antes con 'Guardar este análisis' —
+    reemplaza el trabajo actual por el que traiga el archivo."""
+    sid, sesion = _sesion(request)
+    if archivo is None:
+        return _redirigir("/cargar", sid)
+    contenido = await archivo.read()
+    try:
+        with zipfile.ZipFile(io.BytesIO(contenido)) as zf:
+            if "estado.json" not in zf.namelist():
+                return _redirigir("/cargar?error_proyecto=1", sid)
+            state.limpiar_trabajo_guardado()
+            zf.extractall(state.CARPETA_TRABAJO)
+    except zipfile.BadZipFile:
+        return _redirigir("/cargar?error_proyecto=1", sid)
+
+    nueva = state.cargar_estado_guardado()
+    if nueva is not None:
+        state.SESSIONS[sid] = nueva
+    return _redirigir("/cargar", sid)
 
 
 @app.post("/cargar/agregar-seleccion")

@@ -3,8 +3,12 @@
   <div class="screen-head">
     <div class="eyebrow">Etapa 1 de 4</div>
     <h1 class="screen-title">Cargá las fotos de tu placa</h1>
-    <p class="screen-sub">Cada selección junta las fotos de una misma placa o condición, con el objetivo del microscopio con el que se sacaron. Podés cargar varias selecciones antes de analizar.</p>
+    <p class="screen-sub">Cada selección junta las fotos de una misma placa o condición, con el objetivo del microscopio con el que se sacaron. Podés cargar varias selecciones antes de analizar. Todo se guarda solo a medida que trabajás, así que si se cierra el programa o se corta la luz no se pierde nada.</p>
   </div>
+
+  {% if error_proyecto %}
+    <div class="alert-warn">⚠️ Ese archivo no es un análisis guardado válido (o está dañado). No se tocó tu trabajo actual.</div>
+  {% endif %}
 
   {% for sel_id, sel in selecciones.items() %}
     <div class="card upload-card">
@@ -116,5 +120,30 @@
   </div>
   {% if not hay_fotos %}
     <p class="field-hint" style="text-align:right">Subí las fotos en al menos una selección para poder analizar.</p>
+  {% endif %}
+
+  <h2 class="section-title">Otras opciones</h2>
+  <div class="export-grid">
+    <div class="card export-card">
+      <h3>Guardar este análisis como archivo</h3>
+      <p>Bajá todo el trabajo actual (fotos, resultados y correcciones) en un único archivo, para tenerlo de backup o pasarlo a otra computadora.</p>
+      <a class="btn btn-secondary btn-block" href="/cargar/proyecto/guardar">⬇ Guardar análisis (.zip)</a>
+    </div>
+    <div class="card export-card">
+      <h3>Abrir un análisis guardado</h3>
+      <p>Elegí un archivo bajado antes con "Guardar este análisis" para retomarlo — <strong>reemplaza</strong> el trabajo que tengas ahora.</p>
+      <form method="post" action="/cargar/proyecto/abrir" enctype="multipart/form-data"
+            onsubmit="return confirm('Esto reemplaza el trabajo actual por el del archivo. ¿Seguir?')">
+        <input type="file" name="archivo" accept=".zip" required style="margin-bottom:10px">
+        <button class="btn btn-secondary btn-block" type="submit">⬆ Abrir análisis</button>
+      </form>
+    </div>
+  </div>
+
+  {% if hay_algo_que_vaciar %}
+    <form method="post" action="/cargar/reiniciar-todo"
+          onsubmit="return confirm('Esto borra todas las fotos y resultados actuales para arrancar de cero. No se puede deshacer. ¿Seguro?')">
+      <button class="btn btn-ghost" type="submit">🗑 Vaciar todo y empezar de cero</button>
+    </form>
   {% endif %}
 {% endblock %}
