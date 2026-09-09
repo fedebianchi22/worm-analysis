@@ -34,6 +34,9 @@ navegador), y las fotos nunca salen de la computadora donde se procesan.
   por grupo — listo para pegar en un informe.
 - **Actualización automática**: al abrirse, revisa sola si hay una versión
   nueva publicada y se actualiza sin pasos manuales.
+- **Guardado automático**: el trabajo se guarda solo en disco a medida que
+  se hace, no solo en memoria — si el programa se cierra mal o se corta la
+  luz, al volver a abrirlo todo sigue tal como había quedado.
 
 ## Para el laboratorio
 
@@ -108,6 +111,21 @@ silencioso: se cierra, se reinstala encima (misma carpeta) y se vuelve a
 abrir solo, sin que aparezca ninguna ventana en el proceso. Requiere que la
 PC tenga internet en ese momento; si no lo tiene, sigue abriendo el
 programa normal sin bloquear nada.
+
+## Guardado automático
+
+El trabajo (selecciones, resultados, correcciones) no vive solo en
+memoria: se guarda a `%LocalAppData%\CElegansLab\trabajo_actual\` después
+de cada cambio (`state.guardar_estado`, enganchado en el redirect que usa
+cualquier ruta que modifica algo). Si el programa se cierra mal, se apaga
+la PC o se corta la luz, al volver a abrirlo el trabajo se recupera solo,
+sin que el usuario tenga que hacer nada.
+
+Ese trabajo queda guardado ahí hasta que se lo vacía a propósito —
+"Vaciar todo y empezar de cero" en la etapa de Cargar fotos, una acción
+explícita con confirmación, nunca automática. También se puede bajar como
+un `.zip` portátil ("Guardar este análisis") y volver a abrirlo después
+(en la misma PC o en otra) con "Abrir un análisis guardado".
 
 Para publicar una versión nueva que dispare ese aviso en todas las PCs:
 
