@@ -24,6 +24,10 @@ navegador), y las fotos nunca salen de la computadora donde se procesan.
 - **Corrección a mano** con un editor de contorno tipo "pluma" (Photoshop):
   agregar, mover y curvar puntos sobre la foto real, con recálculo
   inmediato del área y la longitud.
+- **Agregar un gusano que no se detectó**: si la detección automática se
+  equivocó y no encontró un gusano real de la foto (por ejemplo, tomó
+  "basura" como posible gusano cruzado y al gusano de verdad no lo marcó),
+  se puede dibujar su contorno a mano desde cero sobre la foto completa.
 - **Separar detecciones conjuntas**: si dos gusanos pegados se detectaron
   como uno solo, se dividen en dos filas independientes para ajustar cada
   contorno por separado.
@@ -49,7 +53,8 @@ Instalá el programa (`CElegansLab-Setup.exe`, ver más abajo) y seguí las
    gusanos se midieron solos vs. cuántos hay que revisar) y las fotos
    anotadas. Los valores de la tabla se pueden editar a mano.
 3. **Corregir detección**: ajustá el contorno de los gusanos marcados para
-   revisar, o separá una detección que en realidad son dos gusanos pegados.
+   revisar, separá una detección que en realidad son dos gusanos pegados, o
+   agregá uno que la detección automática no haya encontrado en la foto.
 4. **Exportar**: descargá el Excel con todo, o las fotos anotadas de una
    selección puntual.
 

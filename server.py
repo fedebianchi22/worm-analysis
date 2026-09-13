@@ -562,15 +562,31 @@ def _imagen_a_data_uri(ruta):
         return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
 
 
+def _forma_inicial_ovalo(canvas_w, canvas_h, n_puntos=16):
+    """Óvalo alargado (forma de gusano) centrado en el canvas, como punto de
+    partida para dibujar un contorno nuevo desde cero."""
+    import math
+    cx, cy = canvas_w / 2, canvas_h / 2
+    rx = max(30.0, canvas_w * 0.16)
+    ry = max(10.0, canvas_h * 0.05)
+    puntos = []
+    for i in range(n_puntos):
+        ang = 2 * math.pi * i / n_puntos
+        puntos.append({"x": cx + rx * math.cos(ang), "y": cy + ry * math.sin(ang),
+                        "curved": False, "hx": 0, "hy": 0})
+    return puntos
+
+
 @app.get("/corregir")
 def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, idx: int = None,
-                     guiado: int = 0, completo: int = 0, separado: int = 0):
+                     guiado: int = 0, completo: int = 0, separado: int = 0, agregado: int = 0,
+                     modo: str = None):
     sid, sesion = _sesion(request)
     resultado = sesion["resultado"]
     if resultado is None:
         return _redirigir("/cargar", sid)
 
-    sids_con_datos = [s for s, sel in resultado["selecciones"].items() if any(f.get("contorno") for f in sel["filas"])]
+    sids_con_datos = [s for s, sel in resultado["selecciones"].items() if sel["filas"]]
     if not sids_con_datos:
         return _render(request, sid, "corregir.html", {"etapa": "corregir", "sin_datos": True, **_contexto_sidebar(sesion)})
 
@@ -596,20 +612,57 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
     if sid_sel not in sids_con_datos:
         sid_sel = sids_con_datos[0]
     sel = resultado["selecciones"][sid_sel]
-    archivos_con_datos = list(dict.fromkeys(f["archivo"] for f in sel["filas"] if f.get("contorno")))
+    archivos_con_datos = list(dict.fromkeys(f["archivo"] for f in sel["filas"]))
     if archivo is None or archivo not in archivos_con_datos:
         archivo = archivos_con_datos[0]
     filas_de_foto = [(i, f) for i, f in enumerate(sel["filas"]) if f["archivo"] == archivo and f.get("contorno")]
     indices_validos = [i for i, _ in filas_de_foto]
-    if idx is None or idx not in indices_validos:
+    if idx is not None and idx not in indices_validos:
+        idx = None
+    if idx is None and indices_validos:
         idx = indices_validos[0]
 
-    fila_corr = sel["filas"][idx]
+    modo_agregar = (modo == "agregar") or idx is None
     px_per_mm_corr = sel.get("px_per_mm") or OBJETIVOS_CALIBRADOS[OBJETIVO_POR_DEFECTO]
     ruta_original = os.path.join(sel["carpeta_entrada"], archivo)
     img_original = cv2.imread(ruta_original)
     img_h, img_w = img_original.shape[:2]
 
+    pendientes_actuales = _cola_pendientes(resultado)
+
+    ctx = {
+        "etapa": "corregir",
+        "sin_datos": False,
+        "modo_agregar": modo_agregar,
+        "recien_separado": bool(separado),
+        "recien_agregado": bool(agregado),
+        "total_pendientes": len(pendientes_actuales),
+        "selecciones": resultado["selecciones"], "sids_con_datos": sids_con_datos,
+        "sid_sel": sid_sel, "archivo": archivo, "idx": idx,
+        "archivos_con_datos": archivos_con_datos, "indices_validos": indices_validos, "filas_de_foto": filas_de_foto,
+        **_contexto_sidebar(sesion),
+    }
+
+    if modo_agregar:
+        objetivo_px_full = 900
+        escala = min(2.0, objetivo_px_full / max(img_w, img_h))
+        canvas_w, canvas_h = max(1, int(img_w * escala)), max(1, int(img_h * escala))
+        img_resized = cv2.resize(img_original, (canvas_w, canvas_h))
+        ruta_tmp = os.path.join(sesion["carpeta"], "_agregar_actual.png")
+        cv2.imwrite(ruta_tmp, img_resized)
+        puntos_canvas = _forma_inicial_ovalo(canvas_w, canvas_h)
+        ctx.update({
+            "revision_completa": False, "en_revision_guiada": False,
+            "fila_corr": None, "motivo_actual": "—",
+            "imagen_data_uri": _imagen_a_data_uri(ruta_tmp),
+            "canvas_w": canvas_w, "canvas_h": canvas_h,
+            "puntos_canvas_json": __import__("json").dumps(puntos_canvas),
+            "escala": escala,
+            "puede_separar": False,
+        })
+        return _render(request, sid, "corregir.html", ctx)
+
+    fila_corr = sel["filas"][idx]
     contorno_control_guardado = fila_corr.get("contorno_control") or []
     if contorno_control_guardado and isinstance(contorno_control_guardado[0], dict):
         contorno_inicial = contorno_control_guardado
@@ -640,28 +693,19 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
         for p in contorno_inicial
     ]
 
-    pendientes_actuales = _cola_pendientes(resultado)
     clave_actual = (sid_sel, archivo, fila_corr.get("id"))
     en_revision_guiada = bool(guiado) and clave_actual in pendientes_actuales
 
-    ctx = {
-        "etapa": "corregir",
-        "sin_datos": False,
-        "recien_separado": bool(separado),
+    ctx.update({
         "revision_completa": revision_completa and not en_revision_guiada,
         "en_revision_guiada": en_revision_guiada,
-        "total_pendientes": len(pendientes_actuales),
-        "selecciones": resultado["selecciones"], "sids_con_datos": sids_con_datos,
-        "sid_sel": sid_sel, "archivo": archivo, "idx": idx,
-        "archivos_con_datos": archivos_con_datos, "indices_validos": indices_validos, "filas_de_foto": filas_de_foto,
         "fila_corr": fila_corr, "motivo_actual": fila_corr.get("motivo") or "—",
         "imagen_data_uri": _imagen_a_data_uri(ruta_crop_tmp),
         "canvas_w": canvas_w, "canvas_h": canvas_h,
         "puntos_canvas_json": __import__("json").dumps(puntos_canvas),
         "escala": escala, "x0": x0, "y0": y0,
         "puede_separar": len(sel["filas"]) >= 1,
-        **_contexto_sidebar(sesion),
-    }
+    })
     return _render(request, sid, "corregir.html", ctx)
 
 
@@ -693,6 +737,53 @@ def separar_gusano(request: Request, sid_sel: int = Form(...), archivo: str = Fo
     dibujar_overlay(ruta_original, ruta_salida, gusanos_de_la_foto)
 
     return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx}&separado=1", sid)
+
+
+@app.post("/corregir/agregar")
+async def agregar_gusano(request: Request):
+    """Crea un gusano nuevo desde cero, para el caso en que la detección
+    automática no haya encontrado uno que sí está en la foto."""
+    sid, sesion = _sesion(request)
+    form = await request.form()
+    sid_sel = int(form["sid_sel"])
+    archivo = form["archivo"]
+    import json
+    puntos_editados = json.loads(form["puntos"])
+
+    resultado = sesion["resultado"]
+    sel = resultado["selecciones"][sid_sel]
+    px_per_mm_sel = sel.get("px_per_mm") or OBJETIVOS_CALIBRADOS[OBJETIVO_POR_DEFECTO]
+    ruta_original = os.path.join(sel["carpeta_entrada"], archivo)
+    img_original = cv2.imread(ruta_original)
+    escala = float(form["escala"])
+
+    if len(puntos_editados) >= 3:
+        nuevo_control = [
+            {"x": p["x"] / escala, "y": p["y"] / escala,
+             "curved": p["curved"], "hx": p["hx"] / escala, "hy": p["hy"] / escala}
+            for p in puntos_editados
+        ]
+        medicion = medir_desde_contorno(nuevo_control, img_original.shape, px_per_mm_sel)
+
+        ids_existentes = [f["id"] for f in sel["filas"] if f.get("id") is not None]
+        siguiente_id = (max(ids_existentes) + 1) if ids_existentes else 0
+
+        # Si esta foto solo tenía la fila-placeholder de "no se detectó
+        # ningún gusano", la sacamos: ya no aplica una vez que se agregó uno.
+        sel["filas"] = [f for f in sel["filas"] if not (f["archivo"] == archivo and f.get("id") is None)]
+        sel["filas"].append({
+            "archivo": archivo, "id": siguiente_id,
+            "area_um2": medicion["area_um2"], "length_um": medicion["length_um"],
+            "contorno": medicion["contorno_dibujo"], "contorno_control": nuevo_control,
+            "skel_points": medicion["skel_points"], "posible_cruce": medicion["posible_cruce"],
+            "revisar_manualmente": False, "motivo": "agregado manualmente",
+        })
+        _redibujar_foto(sel, archivo)
+
+        idx_nuevo = len(sel["filas"]) - 1
+        return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&idx={idx_nuevo}&agregado=1", sid)
+
+    return _redirigir(f"/corregir?sid_sel={sid_sel}&archivo={archivo}&modo=agregar", sid)
 
 
 @app.post("/corregir/omitir")
