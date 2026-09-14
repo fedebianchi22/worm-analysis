@@ -198,6 +198,58 @@ def dibujar_overlay(image_path, out_path, gusanos):
     cv2.imwrite(out_path, overlay)
 
 
+def detectar_en_recorte(crop_bgr, area_min_frac=0.01, area_max_frac=0.6, max_solidity=0.75):
+    """
+    Corre la misma segmentación de measure_worms() pero acotada a un recorte
+    chico (el área que el usuario marcó a mano alrededor de un gusano que la
+    detección automática se salteó en la foto completa). Devuelve el
+    contorno_control ya curvado del candidato más cercano al centro del
+    recorte -asumiendo que el usuario centró el recuadro sobre el gusano-, o
+    None si no encuentra nada que pase los filtros de forma. Así el editor
+    arranca con un trazado ya ajustado en vez de un óvalo genérico, salvo que
+    la detección no encuentre nada plausible.
+    """
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    kernel_fondo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))
+    fondo = cv2.morphologyEx(blur, cv2.MORPH_CLOSE, kernel_fondo)
+    corregida = cv2.divide(blur, fondo, scale=255)
+    _, thresh = cv2.threshold(corregida, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    clean = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+    clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel, iterations=2)
+    contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not contours:
+        return None
+
+    h, w = gray.shape[:2]
+    area_total = h * w
+    cx0, cy0 = w / 2, h / 2
+
+    candidatos = []
+    for cnt in contours:
+        area_px = cv2.contourArea(cnt)
+        if area_px < area_total * area_min_frac or area_px > area_total * area_max_frac:
+            continue
+        hull = cv2.convexHull(cnt)
+        hull_area = cv2.contourArea(hull)
+        solidity = area_px / hull_area if hull_area > 0 else 1.0
+        if solidity > max_solidity:
+            continue
+        momentos = cv2.moments(cnt)
+        if momentos["m00"] == 0:
+            continue
+        ccx, ccy = momentos["m10"] / momentos["m00"], momentos["m01"] / momentos["m00"]
+        distancia_centro = ((ccx - cx0) ** 2 + (ccy - cy0) ** 2) ** 0.5
+        candidatos.append((distancia_centro, cnt))
+
+    if not candidatos:
+        return None
+    candidatos.sort(key=lambda c: c[0])
+    mejor = candidatos[0][1]
+    return _contorno_control_inicial(mejor, _simplificar_contorno(mejor))
+
+
 def measure_worms(image_path, out_path, px_per_mm=None, min_area_px=800, max_area_px=60000, max_solidity=0.65):
     px_per_mm = px_per_mm or OBJETIVOS_CALIBRADOS[OBJETIVO_POR_DEFECTO]
     px_per_um = px_per_mm / 1000

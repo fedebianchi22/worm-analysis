@@ -246,7 +246,7 @@ table.results tbody tr:hover { background: var(--surface-2); }
 .row-delete-btn:hover { background: var(--warn-soft); }
 
 /* Corregir */
-.fix-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; align-items: start; }
+.fix-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr); gap: 22px; align-items: start; }
 .fix-canvas { padding: 16px; }
 .fix-canvas-frame { border-radius: 10px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); position: relative; }
 .fix-legend { display: flex; gap: 18px; margin-top: 12px; font-size: .76rem; color: var(--text-muted); flex-wrap: wrap; }

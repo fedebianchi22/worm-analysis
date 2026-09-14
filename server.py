@@ -20,6 +20,7 @@ import state
 from measure_worms import (
     OBJETIVO_POR_DEFECTO,
     OBJETIVOS_CALIBRADOS,
+    detectar_en_recorte,
     dibujar_overlay,
     medir_desde_contorno,
     measure_worms,
@@ -687,14 +688,28 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
         ruta_tmp = os.path.join(sesion["carpeta"], "_agregar_actual.png")
         cv2.imwrite(ruta_tmp, crop_resized)
 
-        cx_sel = ((rx0 + rx1) / 2 - cx0) * escala
-        cy_sel = ((ry0 + ry1) / 2 - cy0) * escala
-        rx_sel = max(20.0, (rx1 - rx0) / 2 * escala * 0.85)
-        ry_sel = max(10.0, (ry1 - ry0) / 2 * escala * 0.7)
-        puntos_canvas = _forma_ovalo(cx_sel, cy_sel, rx_sel, ry_sel)
+        # Intentamos correr la detección automática ahí adentro: si encuentra
+        # algo con forma de gusano, el editor arranca con ese contorno en vez
+        # de un óvalo genérico, y hace falta ajustar mucho menos a mano.
+        detectado = detectar_en_recorte(crop)
+        if detectado:
+            puntos_canvas = [
+                {"x": p["x"] * escala, "y": p["y"] * escala,
+                 "curved": p["curved"], "hx": p["hx"] * escala, "hy": p["hy"] * escala}
+                for p in detectado
+            ]
+            deteccion_automatica = True
+        else:
+            cx_sel = ((rx0 + rx1) / 2 - cx0) * escala
+            cy_sel = ((ry0 + ry1) / 2 - cy0) * escala
+            rx_sel = max(20.0, (rx1 - rx0) / 2 * escala * 0.85)
+            ry_sel = max(10.0, (ry1 - ry0) / 2 * escala * 0.7)
+            puntos_canvas = _forma_ovalo(cx_sel, cy_sel, rx_sel, ry_sel)
+            deteccion_automatica = False
 
         ctx.update({
             "paso_area": False,
+            "deteccion_automatica": deteccion_automatica,
             "revision_completa": False, "en_revision_guiada": False,
             "fila_corr": None, "motivo_actual": "—",
             "imagen_data_uri": _imagen_a_data_uri(ruta_tmp),

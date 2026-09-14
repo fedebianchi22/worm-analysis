@@ -27,8 +27,10 @@ navegador), y las fotos nunca salen de la computadora donde se procesan.
 - **Agregar un gusano que no se detectó**: si la detección automática se
   equivocó y no encontró un gusano real de la foto (por ejemplo, tomó
   "basura" como posible gusano cruzado y al gusano de verdad no lo marcó),
-  se puede enmarcar dónde está con un recuadro sobre la foto completa y
-  después dibujar su contorno a mano, con zoom sobre esa zona.
+  se puede enmarcar dónde está con un recuadro sobre la foto completa. Ahí
+  adentro se vuelve a intentar la detección automática (con zoom, ya
+  acotada a esa zona) para arrancar con un contorno lo más ajustado
+  posible; si no encuentra nada, se dibuja a mano desde un óvalo inicial.
 - **Separar detecciones conjuntas**: si dos gusanos pegados se detectaron
   como uno solo, se dividen en dos filas independientes para ajustar cada
   contorno por separado.

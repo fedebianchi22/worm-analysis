@@ -111,7 +111,10 @@
       </script>
     {% else %}
       {% if modo_agregar %}
-        <div class="context-bar">➕ Agregando un gusano nuevo en <strong>{{ archivo }}</strong></div>
+        <div class="context-bar">
+          ➕ Agregando un gusano nuevo en <strong>{{ archivo }}</strong>
+          {%- if deteccion_automatica %} — le calculamos un contorno inicial automático, ajustalo si hace falta{% else %} — no se detectó nada solo ahí adentro, armá el contorno a mano{% endif %}
+        </div>
       {% else %}
         <div class="context-bar">Editando <strong>{{ archivo }} — gusano #{{ fila_corr.id }}</strong> · {{ motivo_actual }}</div>
       {% endif %}
@@ -146,7 +149,11 @@
           <div class="card fix-actions" style="padding:18px">
             {% if modo_agregar %}
               <ol class="steps-list">
-                <li><span class="n">1</span>Ajustá el óvalo al contorno real del gusano: arrastrá sus puntos y las manijas celestes para curvar.</li>
+                {% if deteccion_automatica %}
+                  <li><span class="n">1</span>Revisá el contorno calculado y corregí lo que haga falta, igual que al corregir cualquier otro gusano.</li>
+                {% else %}
+                  <li><span class="n">1</span>Ajustá el óvalo al contorno real del gusano: arrastrá sus puntos y las manijas celestes para curvar.</li>
+                {% endif %}
                 <li><span class="n">2</span>Hacé clic sobre la línea si necesitás agregar algún punto más.</li>
                 <li><span class="n">3</span>Cuando quede ajustado, aplicá para sumarlo a la tabla.</li>
               </ol>
