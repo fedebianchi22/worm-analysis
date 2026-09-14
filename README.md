@@ -27,7 +27,8 @@ navegador), y las fotos nunca salen de la computadora donde se procesan.
 - **Agregar un gusano que no se detectó**: si la detección automática se
   equivocó y no encontró un gusano real de la foto (por ejemplo, tomó
   "basura" como posible gusano cruzado y al gusano de verdad no lo marcó),
-  se puede dibujar su contorno a mano desde cero sobre la foto completa.
+  se puede enmarcar dónde está con un recuadro sobre la foto completa y
+  después dibujar su contorno a mano, con zoom sobre esa zona.
 - **Separar detecciones conjuntas**: si dos gusanos pegados se detectaron
   como uno solo, se dividen en dos filas independientes para ajustar cada
   contorno por separado.
@@ -170,6 +171,8 @@ Y se abre `http://localhost:8501`.
   tema claro y oscuro).
 - `static/pen.js` — editor de contorno tipo "pluma" (agregar/mover/curvar
   puntos con manijas Bezier), sin dependencias externas.
+- `static/area.js` — selector de área rectangular tipo "marquee", para
+  enmarcar dónde está un gusano nuevo antes de dibujar su contorno.
 - `reporte_excel.py` — arma el Excel final con las secciones y colores.
 - `launcher.py` — punto de entrada del ejecutable: levanta el servidor y
   lo abre en su propia ventana (pywebview); si falla, cae de respaldo al

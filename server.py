@@ -562,13 +562,10 @@ def _imagen_a_data_uri(ruta):
         return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
 
 
-def _forma_inicial_ovalo(canvas_w, canvas_h, n_puntos=16):
-    """Óvalo alargado (forma de gusano) centrado en el canvas, como punto de
-    partida para dibujar un contorno nuevo desde cero."""
+def _forma_ovalo(cx, cy, rx, ry, n_puntos=14):
+    """Óvalo (forma de gusano) centrado en (cx, cy), como punto de partida
+    para dibujar un contorno nuevo desde cero."""
     import math
-    cx, cy = canvas_w / 2, canvas_h / 2
-    rx = max(30.0, canvas_w * 0.16)
-    ry = max(10.0, canvas_h * 0.05)
     puntos = []
     for i in range(n_puntos):
         ang = 2 * math.pi * i / n_puntos
@@ -580,7 +577,7 @@ def _forma_inicial_ovalo(canvas_w, canvas_h, n_puntos=16):
 @app.get("/corregir")
 def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, idx: int = None,
                      guiado: int = 0, completo: int = 0, separado: int = 0, agregado: int = 0,
-                     modo: str = None):
+                     modo: str = None, ax0: int = None, ay0: int = None, ax1: int = None, ay1: int = None):
     sid, sesion = _sesion(request)
     resultado = sesion["resultado"]
     if resultado is None:
@@ -644,20 +641,66 @@ def pagina_corregir(request: Request, sid_sel: int = None, archivo: str = None, 
     }
 
     if modo_agregar:
-        objetivo_px_full = 900
-        escala = min(2.0, objetivo_px_full / max(img_w, img_h))
-        canvas_w, canvas_h = max(1, int(img_w * escala)), max(1, int(img_h * escala))
-        img_resized = cv2.resize(img_original, (canvas_w, canvas_h))
+        import json as _json
+        area_elegida = None not in (ax0, ay0, ax1, ay1)
+
+        if not area_elegida:
+            # Paso 1: elegir con un recuadro en qué parte de la foto completa
+            # está el gusano que no se detectó.
+            objetivo_px_full = 900
+            escala = min(2.0, objetivo_px_full / max(img_w, img_h))
+            canvas_w, canvas_h = max(1, int(img_w * escala)), max(1, int(img_h * escala))
+            img_resized = cv2.resize(img_original, (canvas_w, canvas_h))
+            ruta_tmp = os.path.join(sesion["carpeta"], "_agregar_area.png")
+            cv2.imwrite(ruta_tmp, img_resized)
+            rect_w, rect_h = canvas_w * 0.26, canvas_h * 0.13
+            rect_inicial = {
+                "x0": canvas_w / 2 - rect_w / 2, "y0": canvas_h / 2 - rect_h / 2,
+                "x1": canvas_w / 2 + rect_w / 2, "y1": canvas_h / 2 + rect_h / 2,
+            }
+            ctx.update({
+                "paso_area": True,
+                "imagen_data_uri": _imagen_a_data_uri(ruta_tmp),
+                "canvas_w": canvas_w, "canvas_h": canvas_h,
+                "escala": escala,
+                "rect_inicial_json": _json.dumps(rect_inicial),
+                "puede_separar": False,
+            })
+            return _render(request, sid, "corregir.html", ctx)
+
+        # Paso 2: ya se marcó el área — se recorta y se dibuja el contorno
+        # ahí adentro, igual que al corregir un gusano ya detectado.
+        margen = 40
+        rx0, rx1 = sorted((ax0, ax1))
+        ry0, ry1 = sorted((ay0, ay1))
+        cx0 = int(max(0, rx0 - margen))
+        cy0 = int(max(0, ry0 - margen))
+        cx1 = int(min(img_w, rx1 + margen))
+        cy1 = int(min(img_h, ry1 + margen))
+
+        crop = img_original[cy0:cy1, cx0:cx1]
+        crop_h, crop_w = crop.shape[:2]
+        objetivo_px = 560
+        escala = min(3.5, max(1.0, objetivo_px / max(crop_w, crop_h)))
+        canvas_w, canvas_h = int(crop_w * escala), int(crop_h * escala)
+        crop_resized = cv2.resize(crop, (canvas_w, canvas_h))
         ruta_tmp = os.path.join(sesion["carpeta"], "_agregar_actual.png")
-        cv2.imwrite(ruta_tmp, img_resized)
-        puntos_canvas = _forma_inicial_ovalo(canvas_w, canvas_h)
+        cv2.imwrite(ruta_tmp, crop_resized)
+
+        cx_sel = ((rx0 + rx1) / 2 - cx0) * escala
+        cy_sel = ((ry0 + ry1) / 2 - cy0) * escala
+        rx_sel = max(20.0, (rx1 - rx0) / 2 * escala * 0.85)
+        ry_sel = max(10.0, (ry1 - ry0) / 2 * escala * 0.7)
+        puntos_canvas = _forma_ovalo(cx_sel, cy_sel, rx_sel, ry_sel)
+
         ctx.update({
+            "paso_area": False,
             "revision_completa": False, "en_revision_guiada": False,
             "fila_corr": None, "motivo_actual": "—",
             "imagen_data_uri": _imagen_a_data_uri(ruta_tmp),
             "canvas_w": canvas_w, "canvas_h": canvas_h,
-            "puntos_canvas_json": __import__("json").dumps(puntos_canvas),
-            "escala": escala,
+            "puntos_canvas_json": _json.dumps(puntos_canvas),
+            "escala": escala, "x0": cx0, "y0": cy0,
             "puede_separar": False,
         })
         return _render(request, sid, "corregir.html", ctx)
@@ -756,10 +799,12 @@ async def agregar_gusano(request: Request):
     ruta_original = os.path.join(sel["carpeta_entrada"], archivo)
     img_original = cv2.imread(ruta_original)
     escala = float(form["escala"])
+    x0 = int(form.get("x0", 0))
+    y0 = int(form.get("y0", 0))
 
     if len(puntos_editados) >= 3:
         nuevo_control = [
-            {"x": p["x"] / escala, "y": p["y"] / escala,
+            {"x": x0 + p["x"] / escala, "y": y0 + p["y"] / escala,
              "curved": p["curved"], "hx": p["hx"] / escala, "hy": p["hy"] / escala}
             for p in puntos_editados
         ]
